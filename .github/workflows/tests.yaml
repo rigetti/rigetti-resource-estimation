@@ -1,0 +1,141 @@
+# Copyright 2022-2024 Rigetti & Co, LLC
+#
+# This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
+# the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
+# to the restrictions as stated in Agreement HR00112230006 between the Government and the Performer.
+# This Computer Software is provided to the U.S. Government with Unlimited Rights; refer to LICENSE
+# file for Data Rights Statements. Any opinions, findings, conclusions or recommendations expressed
+# in this material are those of the author(s) and do not necessarily reflect the views of the DARPA.
+#
+# Use of this work other than as specifically authorized by the U.S. Government is licensed under
+# the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance
+# with the License. You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License
+# is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+# or implied. See the License for the specific language governing permissions and limitations under
+# the License.
+
+name: Tests
+
+on: [push]
+
+jobs:
+  check-style:
+    name: check-style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+      - uses: actions/cache@v4
+        with:
+          path: .venv
+          key: poetry-${{ hashFiles('poetry.lock') }}
+      - name: Run check via Make
+        run: |
+          source .github/workflows/install-poetry.sh
+          make check-style
+
+  check-format:
+    name: check-format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+      - uses: actions/cache@v4
+        with:
+          path: .venv
+          key: poetry-${{ hashFiles('poetry.lock') }}
+      - name: Run check via Make
+        run: |
+          source .github/workflows/install-poetry.sh
+          make check-format
+
+  build-package-and-docs:
+    name: build-package-and-docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+      - uses: actions/cache@v4
+        with:
+          path: .venv
+          key: poetry-${{ hashFiles('poetry.lock') }}
+      - name: Build docs via Make
+        run: |
+          source .github/workflows/install-poetry.sh
+          make build-docs build-package
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-and-docs
+          path: dist
+  
+  test-package:
+    name: test-package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: 1.9.3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up venv with poetry 
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: poetry-${{ hashFiles('poetry.lock') }}
+      - name: Install Poetry
+        run: source .github/workflows/install-poetry.sh
+      - name: Run tests via Make
+        run: |
+          julia -e 'using Pkg;  Pkg.add(name="Jabalizer", version="0.5.2"); Pkg.add("PythonCall"); Pkg.build("PythonCall")'
+          make test-package
+
+  run-examples:
+    name: run-examples
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: 1.9.3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up venv with poetry
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: poetry-${{ hashFiles('poetry.lock') }}
+      - name: Install Poetry
+        run: source .github/workflows/install-poetry.sh
+      - name: Run examples via Make
+        run: |
+          julia -e 'using Pkg;  Pkg.add(name="Jabalizer", version="0.5.2"); Pkg.add("PythonCall"); Pkg.build("PythonCall")'
+          make run-examples
