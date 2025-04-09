@@ -1,0 +1,278 @@
+# Copyright 2022-2024 Rigetti & Co, LLC
+#
+# This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
+# the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
+# to the restrictions as stated in Agreement HR00112230006 between the Government and the Performer.
+# This Computer Software is provided to the U.S. Government with Unlimited Rights; refer to LICENSE
+# file for Data Rights Statements. Any opinions, findings, conclusions or recommendations expressed
+# in this material are those of the author(s) and do not necessarily reflect the views of the DARPA.
+#
+# Use of this work other than as specifically authorized by the U.S. Government is licensed under
+# the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance
+# with the License. You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software distributed under the License
+# is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+# or implied. See the License for the specific language governing permissions and limitations under
+# the License.
+
+# A homogeneous physical gate error rate that sets how quickly we suppress the logical errors for 
+# quantum ops.
+phys_gate_error_rate: 0.001
+
+# Coefficients of the power-law scaling describing how the logical error (of a single cycle of surface
+# code) relates to physical error rate and code distance. Assumes the form 
+# p_logical_cell = k * (p/p_th)^((d + 1)/2), where p_logical_cell is the logical error rate per cell
+# and p is the phys_gate_error_rate later fixed as above.
+error_scaling_coeffs:
+  k: 0.3
+  p_th: 0.0142857142857143
+
+# Characteristic timescale required for an embedded reference, modern, classical computing cluster to
+# perform one full round of TN decoding as described by [Chubb 2021, arXiv:2101.04125] in sec, where no
+# parallelization on the logical node level was assumed. 0.1 ms was derived based on the software employed
+# in the reference and its order of magnitude was confirmed in our local tests:
+# The reference machine has a few TFLOPS-per-core of single-precision performance, approx 100w power consumption
+# (familiar numbers for consumer-level GPU and cluster-level CPU units), uses a single core, processes error 
+# correction for square surface code, best-case noise is present, and examples of d=96 and bond dimension of
+# 20 are considered.
+tensordecoder_char_timescale_sec: 0.0001
+
+# Desired algorithm failure probability/threshold/rate budget targeted for executing the entire logical algorithm.
+target_p_algo: 0.5
+
+# Number of steps for the same input circuit that is consecutively executed on the FTQC. This could be useful 
+# for, e.g., time-evolution QSP algorithms with many repeats of the same logical block. We adjust the target failure
+# probability and full evolution time as p_algo_perstep = 1 - math.pow(1 - target_p_algo, 1 / int(n_steps))
+# and full_evolution_time = num_steps * ft_time accordingly.
+# You may set this to "from_filename", and then RRE will extract n_steps automatically from a pattern of
+# `\*_numstep[N]_\*` in the input circuit filename.
+n_steps: 1
+
+# Decomposition method for transforming arbitrary (small-angle) 1Q unitaries into Clifford+T at measurement
+# points. This choice will set two constants in the decomposition formula of c0*log2(1/eps)+c1. 
+# --- Supported inputs ---
+# "gridsynth": the original GridSynth decomposition proposed by [Ross and Selinger 2014, arXiv:1403.2975]
+# and is used in upstream tools such as Jabalizer and NewSynth. Here, c0=4.0 and c1=0.
+# "mixed_fallback": the state-of-the-art mixed-fallback approach improving on the GridSynth's Clifford+T
+# results published by [Kliuchnikov et al. 2022, arXiv:2203.10064] among other decomposition methods. Here,
+# c0=0.57 and c1=8.83.
+1q_unitary_decomp_method: mixed_fallback
+
+# If set manually, the below will override the nested-loop `eps` calculation based on transcendental equations
+# with this fixed value.
+fixed_eps: null
+
+# Parameters of the target superconducting fault-tolerant quantum computer.
+ftqc:
+  name: rigetti_test_system
+   # Characteristic timescale to transfer Bell states from one subcircuit module to another required for handover/stitching
+   # of subgraphs in sec.
+  inter_handover_timescale_sec: 1e-06
+  # Characteristic quantum timescale for the hardware architecture to execute all physical-level ops inside both the
+  # fridges in ns. This specifies the cycle timescale for surface code's lattice surgery ops. This is also the timescale to
+  # distill and transfer T (magic) states from distilleries to subcircuit nodes inside the same fridge.
+  qcycle_char_timescale_ns: 200
+  # No. of pipes in-between two modules of the two fridge architecture. Notice that the no. of lines in each
+  # the pipes will scale with the code distance. This parameter identifies the bandwidth of all inter-module communications
+  # required for the handover of subgraphs.
+  num_intermodule_pipes: 1
+  fridge:
+    name: "example DR"
+    stages:
+      - temperature_kelvin: 4
+        cooling_power_watt: 1e-3
+      - temperature_kelvin: 0.02
+        cooling_power_watt: 1e-5
+  lines:
+    - name: readout_in_line
+      component_current: 0.1
+      line_type: readout_in
+      components:
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: CryostatStage
+          temperature_kelvin: 4
+          component:
+            type: Attenuator
+            name: 5dB attenuator
+            att_decibel: 5
+          power_dissipation_watt: 0.1E-3
+        - type: CryostatStage
+          temperature_kelvin: 0.02
+          component:
+            type: Attenuator
+            name: 20dB attenuator
+            att_decibel: 20
+          power_dissipation_watt: 0.02e-9
+    - name: readout_out_line
+      component_current: 0.1
+      line_type: readout_out
+      components:
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: Circulator
+          name: circulator
+          isolation_decibel: 18
+          loss_decibel: 2
+        - type: Circulator
+          name: circulator
+          isolation_decibel: 18
+          loss_decibel: 2
+        - type: Amplifier
+          name: HEMT amplifier
+          gain_decibel: 40
+          noise_kelvin: 2.1
+        - type: CryostatStage
+          temperature_kelvin: 4
+          component:
+            type: Attenuator
+            name: 5dB attenuator
+            att_decibel: 5
+          power_dissipation_watt: 0.1E-3
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: CryostatStage
+          temperature_kelvin: 0.02
+          component:
+            type: Attenuator
+            name: 20dB attenuator
+            att_decibel: 20
+          power_dissipation_watt: 0.02e-9
+    - name: xy_line
+      component_current: 0.01
+      line_type: microwave_xy
+      components:
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: CryostatStage
+          temperature_kelvin: 4
+          component:
+            type: Attenuator
+            name: 40dB attenuator
+            att_decibel: 40
+          power_dissipation_watt: 0.1E-3
+        - type: CryostatStage
+          temperature_kelvin: 0.02
+          component:
+            type: Attenuator
+            name: 20dB attenuator
+            att_decibel: 20
+          power_dissipation_watt: .02e-9
+    - name: qubit_flux_line
+      component_current: 1.3
+      line_type: qubit_flux
+      components:
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: CryostatStage
+          temperature_kelvin: 4
+          component:
+            type: Attenuator
+            name: 5dB attenuator
+            att_decibel: 5
+          power_dissipation_watt: 0.1E-3
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: CryostatStage
+          temperature_kelvin: 0.02
+          component:
+            type: Attenuator
+            name: 20dB attenuator
+            att_decibel: 20
+          power_dissipation_watt: 0.02e-9
+    - name: coupler_flux_line
+      component_current: 2.3
+      line_type: coupler_flux
+      components:
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: CryostatStage
+          temperature_kelvin: 4
+          component:
+            type: Attenuator
+            name: 5dB attenuator
+            att_decibel: 5
+          power_dissipation_watt: 0.1E-3
+        - type: Cable
+          name: coaxial cable
+          length_m: 1.2
+        - type: CryostatStage
+          temperature_kelvin: 0.02
+          component:
+            type: Attenuator
+            name: 20dB attenuator
+            att_decibel: 20
+          power_dissipation_watt: 0.02e-9
+  processor:
+    # The following will specify the available no. of physical qubits per module 
+    num_qubits: 1000000
+    pitch_mm: 2.0
+    qubits_per_readout_line: 10
+
+
+# Distillation widget lookup table:
+# All widgets have phys_gate_error_rate=1e-3 and were ordered from the smallest qubits-cycles value to the largest
+# (or equivalently in the descending order for p_out). For consistency, we assume the width is always the side
+# where the output/T patches appear. Widgets cannot have a no. of qubits larger than `processor.num_qubits` above.
+distill_widget_table:
+  widgets:
+    - name: 15to1_17_7_7
+      qubits: 4620
+      cycles: 42.6
+      p_out: 4.5e-8
+      cond_20to4: False
+    - name: 15to1u6_13_5_5_cross_20to4_23_11_13
+      qubits: 43300
+      cycles: 130
+      p_out: 1.4e-10
+      cond_20to4: True
+    - name: 15to1u4_13_5_5_cross_20to4_27_13_15
+      qubits: 46800
+      cycles: 157
+      p_out: 2.6e-11
+      cond_20to4: True
+    - name: 15to1u6_11_5_5_cross_15to1_25_11_11
+      qubits: 30700
+      cycles: 82.5
+      p_out: 2.7e-11
+      cond_20to4: False
+    - name: 15to1u6_13_5_5_cross_15to1_29_11_13
+      qubits: 39100
+      cycles: 97.5
+      p_out: 3.3e-14
+      cond_20to4: False
+    - name: 15to1u6_17_7_7_cross_15to1_41_17_17
+      qubits: 73460
+      cycles: 128
+      p_out: 4.5e-20
+      cond_20to4: False
+    - name: 15to1u8_23_9_9_cross_15to1_49_19_21
+      qubits: 133842
+      cycles: 157.5
+      p_out: 9.0e-23
+      cond_20to4: False
