@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -22,83 +22,45 @@
 
 import os
 import shutil
-import math
 
 import pandas as pd
-from numpy import isclose
 
 from rigetti_resource_estimation.estimation_pipeline import estimation_pipeline
 
 
 def test_verify_estimationpipeline_qft4(tmp_path):
     """
-    A verification test for the frontend estimation_pipeline() running not-exactly-QFT3 algorithm (a circuit inspired by
-    QFT3 but simpler, where the graph can be simply worked out).
+    A verification test for the frontend estimation_pipeline() running a widgetized algorithm involving QFT4.
 
-    We start from an _existing_ not-exactly-QFT3 .json graph and find the outputs independent from TPLs. We then
-    compare the properties of this small graph to what is expected to verify the operations of RRE.
+    We start from existing JSONs for the algorithms and find the outputs independent from third-party compilers (using
+    "resume" option). We then compare the properties of these small graphs to what we expected to verify the operations
+    of RRE.
     """
-    circ_path = "./tests/input/qft4.qasm"
     output_csv = tmp_path / "test.csv"
+    output_json1 = "./output/qft4_random_reps/qft4_random_reps_W1_all0init_cabalizeframes.json"
+    output_json2 = "./output/qft4_random_reps/qft4_random_reps_W2_all0init_cabalizeframes.json"
 
-    os.makedirs(os.path.dirname("./output/qft4/qft4_all0init_jabalizeframes.json"), exist_ok=True)
+    os.makedirs(os.path.dirname(output_json1), exist_ok=True)
     shutil.copy2(
-        "./tests/input/qft4_all0init_jabalizeframes.json",
-        "./output/qft4/qft4_all0init_jabalizeframes.json",
+        "./examples/input/qft4_random_reps_W1_all0init_cabalizeframes.json",
+        output_json1,
+    )
+    os.makedirs(os.path.dirname(output_json2), exist_ok=True)
+    shutil.copy2(
+        "./examples/input/qft4_random_reps_W2_all0init_cabalizeframes.json",
+        output_json2,
     )
 
     estimation_pipeline(
-        circ_path=circ_path,
         log="DEBUG",
         output_csv=output_csv,
-        est_method="jabalizer",
+        est_method="cabaliser",
         graph_state_opt="resume",
     )
 
-    df = pd.read_csv(output_csv, header=0, index_col=None, squeeze=True)  # type: ignore
+    df = pd.read_csv(output_csv, header=0, index_col=None)
     results = df.to_dict()
 
-    assert results["rz_count"][0] == 9
-    assert results["input_log_qubits"][0] == 4
-    assert results["N"][0] == 30
-    assert results["required_logical_qubits"][0] == 27
-
-
-def test_verify_estimationpipeline_decomposed_qft10(tmp_path):
-    """Verify the estimation_pipeline() using a widgetized max-depth-3 QFT10 with building block QASMs."""
-    # A single full QFT10 algorithm
-    estimation_pipeline(
-        circ_path="./tests/input/qft10.qasm",
-        log="DEBUG",
-        output_csv=tmp_path / "test2.csv",
-        est_method="jabalizer",
-        graph_state_opt="save",
-    )
-
-    # A decomposed QFT10 JSON with the max depth of 3
-    estimation_pipeline(
-        circ_path="./tests/input/qft10-decomposed3.json",
-        log="DEBUG",
-        decomposed_bb=True,
-        output_csv=tmp_path / "test3.csv",
-        est_method="jabalizer",
-        graph_state_opt="save",
-    )
-
-    # csvs have different number of columns, so they must be loaded separately and then concatenated
-    df1 = pd.read_csv(tmp_path / "test2.csv", header=0, index_col=None, squeeze=True)  # type: ignore
-    df2 = pd.read_csv(tmp_path / "test2.csv", header=0, index_col=None, squeeze=True)  # type: ignore
-    df = pd.concat([df1, df2], axis=0).reset_index()
-    results = df.to_dict()
-
-    # logical-circuit-level properties
-    assert results["rz_count"][0] == results["rz_count"][1] == 108
-    assert results["input_log_qubits"][0] == results["input_log_qubits"][1] == 10
-    # compiled-level properties
-    assert isclose(math.log10(results["t_count"][0]), math.log10(results["t_count"][1]), atol=1)
-    assert isclose(math.log10(results["distance"][0]), math.log10(results["distance"][1]), atol=1)
-    assert isclose(
-        math.log10(results["required_logical_qubits"][0]), math.log10(results["required_logical_qubits"][1]), atol=1
-    )
-    assert isclose(math.log10(results["S_consump"][0]), math.log10(results["S_consump"][1]), atol=1)
-    assert isclose(math.log10(results["N"][0]), math.log10(results["N"][1]), atol=1)
+    assert results["input_logical_qubits"][0] == 4
+    assert results["N"][0] == 216
+    assert results["num_logical_qubits_per_busrail"][0] == 22

@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -30,15 +30,12 @@ error_scaling_coeffs:
   k: 0.3
   p_th: 0.0142857142857143
 
-# Characteristic timescale required for an embedded reference, modern, classical computing cluster to
-# perform one full round of TN decoding as described by [Chubb 2021, arXiv:2101.04125] in sec, where no
-# parallelization on the logical node level was assumed. 0.1 ms was derived based on the software employed
-# in the reference and its order of magnitude was confirmed in our local tests:
-# The reference machine has a few TFLOPS-per-core of single-precision performance, approx 100w power consumption
-# (familiar numbers for consumer-level GPU and cluster-level CPU units), uses a single core, processes error 
-# correction for square surface code, best-case noise is present, and examples of d=96 and bond dimension of
-# 20 are considered.
-tensordecoder_char_timescale_sec: 0.0001
+# The characteristic timescale for reference, embedded, and classical decoding cores to perform a round QEC
+# decoding. We assume it is feasible to engineer generic GPU or FPGA-based decoders with a decoding tock or delay
+# governed by this characteristic timescale. All decoding cores work at a fixed TPD of 100W in line with modern GPU
+# or FPGA units. We also consider there is fixed and maximum number of concurrent decoding cores available to
+# perform decoding for all graph preparation, consumption, handover, and T-distillation operations.
+decoder_char_timescale_sec: 1e-06
 
 # Desired algorithm failure probability/threshold/rate budget targeted for executing the entire logical algorithm.
 target_p_algo: 0.5
@@ -55,7 +52,7 @@ n_steps: 1
 # points. This choice will set two constants in the decomposition formula of c0*log2(1/eps)+c1. 
 # --- Supported inputs ---
 # "gridsynth": the original GridSynth decomposition proposed by [Ross and Selinger 2014, arXiv:1403.2975]
-# and is used in upstream tools such as Jabalizer and NewSynth. Here, c0=4.0 and c1=0.
+# and is used in upstream tools such as Cabaliser and NewSynth. Here, c0=4.0 and c1=0.
 # "mixed_fallback": the state-of-the-art mixed-fallback approach improving on the GridSynth's Clifford+T
 # results published by [Kliuchnikov et al. 2022, arXiv:2203.10064] among other decomposition methods. Here,
 # c0=0.57 and c1=8.83.
@@ -72,13 +69,13 @@ ftqc:
    # of subgraphs in sec.
   inter_handover_timescale_sec: 1e-06
   # Characteristic quantum timescale for the hardware architecture to execute all physical-level ops inside both the
-  # fridges in ns. This specifies the cycle timescale for surface code's lattice surgery ops. This is also the timescale to
-  # distill and transfer T (magic) states from distilleries to subcircuit nodes inside the same fridge.
+  # fridges in ns. This specifies the cycle timescale for surface code's lattice surgery ops. This is the timescale to
+  # distill and transfer T (magic) states from distilleries to subgraph nodes inside the same fridge.
   qcycle_char_timescale_ns: 200
-  # No. of pipes in-between two modules of the two fridge architecture. Notice that the no. of lines in each
+  # No. of pipes in between every pair of modules in the ladder architecture. Notice that the no. of lines in each of
   # the pipes will scale with the code distance. This parameter identifies the bandwidth of all inter-module communications
   # required for the handover of subgraphs.
-  num_intermodule_pipes: 1
+  num_pipes_per_intermodule_connection: 1
   fridge:
     name: "example DR"
     stages:
@@ -238,7 +235,8 @@ ftqc:
 # Distillation widget lookup table:
 # All widgets have phys_gate_error_rate=1e-3 and were ordered from the smallest qubits-cycles value to the largest
 # (or equivalently in the descending order for p_out). For consistency, we assume the width is always the side
-# where the output/T patches appear. Widgets cannot have a no. of qubits larger than `processor.num_qubits` above.
+# where the output/T patches appear and is typically the larger edge. Widgets should have a no. of qubits smaller
+# than `processor.num_qubits` above.
 distill_widget_table:
   widgets:
     - name: 15to1_17_7_7
@@ -246,33 +244,47 @@ distill_widget_table:
       cycles: 42.6
       p_out: 4.5e-8
       cond_20to4: False
+      width: 64
+      length: 73
     - name: 15to1u6_13_5_5_cross_20to4_23_11_13
       qubits: 43300
       cycles: 130
       p_out: 1.4e-10
       cond_20to4: True
+      width: 378
+      length: 156
     - name: 15to1u4_13_5_5_cross_20to4_27_13_15
       qubits: 46800
       cycles: 157
       p_out: 2.6e-11
       cond_20to4: True
+      width: 379
+      length: 164
     - name: 15to1u6_11_5_5_cross_15to1_25_11_11
       qubits: 30700
       cycles: 82.5
       p_out: 2.7e-11
       cond_20to4: False
+      width: 372
+      length: 116
     - name: 15to1u6_13_5_5_cross_15to1_29_11_13
       qubits: 39100
       cycles: 97.5
       p_out: 3.3e-14
       cond_20to4: False
+      width: 411
+      length: 133
     - name: 15to1u6_17_7_7_cross_15to1_41_17_17
       qubits: 73460
       cycles: 128
       p_out: 4.5e-20
       cond_20to4: False
+      width: 570
+      length: 179
     - name: 15to1u8_23_9_9_cross_15to1_49_19_21
       qubits: 133842
       cycles: 157.5
       p_out: 9.0e-23
       cond_20to4: False
+      width: 696
+      length: 234

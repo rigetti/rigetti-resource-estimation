@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -41,7 +41,7 @@ ResourceValue = Union[float, int]
 ResourceFormat = Union[Type[int], Type[float], Type[str]]
 
 
-def find_physq_perpatch(distance: int) -> int:
+def find_physq_per_patch(distance: int) -> int:
     """Find how many data and syndrome qubits are necessary per logical patches for a given distance.
 
     Formula is based on rotated surface code patches.
@@ -82,7 +82,7 @@ class Distance(Resource):
     """Surface code distance."""
 
     def __init__(
-        self, name: str = "Distance", short_name: str = "distance", description: str = "Surface code distance, d"
+        self, name: str = "Code distance", short_name: str = "distance", description: str = "Surface code distance, d"
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -94,40 +94,212 @@ class Distance(Resource):
         return experiment.distance
 
 
-class RequiredLogicalQubits(Resource):
+class NumLogicalQubits(Resource):
     """
-    Resource class for the upper bound on the number of logical qubits (max memory) required at any given time.
+    Resource class for the number of logical qubits per rail of bus or max quantum memory required at any given time.
 
-    We report the logical patches required per fridge and per each rail of bilinear quantum. We ignore
-    the patches required for the T-distillation widgets. This resource is the main identifier for the
-    space costs.
+    The max quantum memory is extracted from the space requirements of the largest subgraph consumption schedule. We
+    report the logical patches required in each rail of the bilinear quantum bus distributed over a ladder leg. We
+    ignore the logical patches required for the T-transfer bus and distillation widgets. This resource can be considered
+    the main identifier for the space costs.
     """
 
     def __init__(
         self,
-        name: str = "Required Logical Qubits",
-        short_name: str = "required_logical_qubits",
-        description: str = "Required number of logical qubits, max memory or graph delta",
+        name: str = "Number of logical qubits per bus rail",
+        short_name: str = "num_logical_qubits_per_busrail",
+        description: str = "Number of logical qubits per quantum bus rail (max memory or graph delta)",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
         """Return calculated required number of logical qubits.
 
-        :param experiment: experiment to calculate the required number of logical qubits for.
+        :param experiment: experiment to extract required attributes of the architecture.
         """
-        # logger.debug(f"The value of {delta} was assigned to resource class `Delta`.")
         return experiment.graph_items.delta or 0
 
 
-class DistillWidgetQubits(Resource):
-    """Number of qubits in the distillation widget (T-factory)."""
+class NumTFactories(Resource):
+    """Number of T-distilleries (MSD factories) in each module."""
 
     def __init__(
         self,
-        name: str = "t_widget_qb",
-        short_name: str = "wq",
-        description: str = "Physical qubits per T-widget",
+        name: str = "Number of T-factories per module",
+        short_name: str = "num_t_factories_per_module",
+        description: str = "Number of T-factories per module",
+    ) -> None:
+        super().__init__(name, short_name, description)
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return total number of T-factories present in each module.
+
+        :param experiment: experiment to calculate the total number of T-factories.
+        """
+        return experiment.intra_component_counts.num_t_factories
+
+
+class MemoryLogicalQubits(Resource):
+    """
+    A resource class for the number of logical memory (graph-state) qubits in the bilinear bus portion per module.
+
+    All modules on a leg of the macro-architecture host the same number of memory logical qubits
+    equals to `memory_logical_qubits_per_module`. The last module may need less than `memory_logical_qubits_per_module`
+    nodes for quantum operations; however, the same space is always reserved for this
+    component.
+    """
+
+    def __init__(
+        self,
+        name: str = "Logical memory logical qubits per module",
+        short_name: str = "memory_logical_qubits_per_module",
+        description: str = "Number of logical memory (graph-state) qubits in the bilinear bus per module",
+    ) -> None:
+        super().__init__(name, short_name, description)
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return calculated required memory logical qubits per module.
+
+        :param experiment: experiment to extract required attributes of the architecture.
+        """
+        return math.ceil((experiment.graph_items.delta or 0) / experiment.num_modules_per_leg)
+
+
+class MemoryPhysicalQubits(Resource):
+    """A resource class for the number of physical memory (graph-state) qubits in the bilinear bus per module."""
+
+    def __init__(
+        self,
+        memory_logical_qubits: MemoryLogicalQubits,
+        name: str = "Physical memory qubits per module",
+        short_name: str = "memory_physical_qubits_per_module",
+        description: str = "Number of memory physical (graph-state) qubits in the bilinear bus per module",
+    ) -> None:
+        super().__init__(name, short_name, description)
+        self.memory_logical_qubits = memory_logical_qubits
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return calculated required memory physical qubits per module.
+
+        :param experiment: experiment to extract required attributes of the architecture.
+        """
+        return self.memory_logical_qubits.get_value(experiment) * find_physq_per_patch(experiment.distance)
+
+
+class AncillaLogicalQubits(Resource):
+    """
+    A resource class for the number of logical ancilla qubits in the bilinear quantum bus section per module.
+
+    Ancilla qubits facilitate all logical operations through multipartite measurements. All modules on a leg of the
+    macro-architecture host the same number of ancilla logical qubits equals to `ancilla_logical_qubits_per_module`.
+    The last module may need less than `ancilla_logical_qubits_per_module` nodes for quantum operations; however, the
+    same space is always reserved for this component.
+    """
+
+    def __init__(
+        self,
+        name: str = "Logical ancilla qubits per module",
+        short_name: str = "ancilla_logical_qubits_per_module",
+        description: str = "Number of logical ancilla qubits in the bilinear bus per module",
+    ) -> None:
+        super().__init__(name, short_name, description)
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return calculated required logical memory qubits per module.
+
+        :param experiment: experiment to extract required attributes of the architecture.
+        """
+        return math.ceil((experiment.graph_items.delta or 0) / experiment.num_modules_per_leg)
+
+
+class AncillaPhysicalQubits(Resource):
+    """A resource class for the number of physical ancilla qubits in the bilinear bus section per module."""
+
+    def __init__(
+        self,
+        ancilla_logical_qubits: AncillaLogicalQubits,
+        name: str = "Physical ancilla qubits per module",
+        short_name: str = "ancilla_physical_qubits_per_module",
+        description: str = "Number of physical ancilla qubits in the bilinear bus per module",
+    ) -> None:
+        super().__init__(name, short_name, description)
+        self.ancilla_logical_qubits = ancilla_logical_qubits
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return calculated required physical ancilla qubits per module.
+
+        :param experiment: experiment to extract required attributes of the architecture.
+        """
+        return self.ancilla_logical_qubits.get_value(experiment) * find_physq_per_patch(experiment.distance)
+
+
+class TBufferLogicalQubits(Resource):
+    """A resource class for the number of logical qubits in the T-transfer bus per module."""
+
+    def __init__(
+        self,
+        name: str = "Logical T-buffer qubits per module",
+        short_name: str = "t_buffer_logical_qubits_per_module",
+        description: str = "Number of logical qubits in the T-transfer bus per module",
+    ) -> None:
+        super().__init__(name, short_name, description)
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return calculated logical T-buffer qubits per module.
+
+        :param experiment: experiment to extract required attributes of the architecture.
+        """
+        return experiment.intra_component_counts.len_transfer_bus
+
+
+class TBufferPhysicalQubits(Resource):
+    """A resource class for the number of physical qubits in the T-transfer bus per module."""
+
+    def __init__(
+        self,
+        name: str = "Physical T-buffer qubits per module",
+        short_name: str = "t_buffer_physical_qubits_per_module",
+        description: str = "Number of physical qubits in the T-transfer bus per module",
+    ) -> None:
+        super().__init__(name, short_name, description)
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return calculated required physical T-buffer qubits per module.
+
+        :param experiment: experiment to extract required attributes of the architecture.
+        """
+        return experiment.intra_component_counts.len_transfer_bus * find_physq_per_patch(experiment.distance)
+
+
+class DistillWidgetLogicalQubits(Resource):
+    """Number of logical nodes assigned to all T-distillation widgets in each module."""
+
+    def __init__(
+        self,
+        name: str = "Logical T-distillery qubits per module",
+        short_name: str = "t_distillery_logical_qubits_per_module",
+        description: str = "Number of logical nodes assigned to all T-distillation widgets in each module",
+    ) -> None:
+        super().__init__(name, short_name, description)
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return calculated value of Widget Qubits.
+
+        :param experiment: experiment to calculate the widget logical qubits value for.
+        """
+        widget_logical_l = math.ceil(experiment.widget.length / (math.sqrt(2) * experiment.distance))
+        widget_logical_w = math.ceil(experiment.widget.width / (math.sqrt(2) * experiment.distance))
+        return widget_logical_w * widget_logical_l * experiment.intra_component_counts.num_t_factories
+
+
+class DistillWidgetPhysicalQubits(Resource):
+    """Number of active physical qubits in all T-distillation widgets in each module."""
+
+    def __init__(
+        self,
+        name: str = "T-distillery physical qubits per module",
+        short_name: str = "t_distillery_physical_qubits_per_module",
+        description: str = "Number of active physical qubits in all T-distilleries in each module",
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -136,70 +308,70 @@ class DistillWidgetQubits(Resource):
 
         :param experiment: experiment to calculate the widget qubits value for.
         """
-        return experiment.widget.qubits
+        return int(experiment.widget.qubits * experiment.intra_component_counts.num_t_factories)
 
 
-class NumTFactories(Resource):
-    """Total number of T-factories in both fridges."""
+class TotalNumFridges(Resource):
+    """Calculate total number of QPU cryo-modules on both leg of the ladder macro-architecture."""
 
     def __init__(
         self,
-        name: str = "Number of T Factories",
-        short_name: str = "num_t_factories",
-        description: str = "Number of T-factories in the distillation fridge(s)",
+        name: str = "Total number of cryo-modules",
+        short_name: str = "total_num_modules",
+        description: str = "Total number of modules on both legs of macro-architecture",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
-        """Return total number of T-factories present in both fridges.
+        """Return calculated total number of modules.
 
-        :param experiment: experiment to calculate the total T factories for.
+
+        :param experiment: experiment to calculate the total number of modules.
         """
-        return 2 * experiment.num_t_factories
+        return 2 * experiment.num_modules_per_leg
 
 
-class ReqQubitsTFactories(Resource):
-    """Calculate the total number of physical qubits required for T-factory widgets per fridge."""
+class NumIntermoduleConnections(Resource):
+    """Calculate total number of interconnects in the ladder macro-architecture"""
 
     def __init__(
         self,
-        name: str = "Required physical qubits for T-factories",
-        short_name: str = "req_phys_qubits_T_factories",
-        description: str = "Required physical qubits for T-factories",
+        name: str = "Total number of interconnects",
+        short_name: str = "total_num_intermodule_connections",
+        description: str = "Total number of interconnects in the ladder macro-architecture",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
-        """Return calculated value of physical qubits used for T-factories.
+        """Return calculated total no. of interconnects.
 
-
-        :param experiment: experiment to calculate the total number of T-factory qubits for.
+        :param experiment: experiment to calculate the total number of interconnects.
         """
-        return experiment.num_t_factories * experiment.widget.qubits
+        return (
+            3 * experiment.num_modules_per_leg - 2
+        ) * experiment.system_architecture.num_pipes_per_intermodule_connection
 
 
-class ReqPhysicalQubits(Resource):
+class NumPhysicalQubits(Resource):
     """
-    Calculate the total number of physical qubits required in the fault-tolerant computer at any given time.
+    Calculate the number of allocated physical qubits in a module of the FTQC at any given time.
 
-    We assume a bilinear-bus two fridge architecture for the complete FTQC by default:
-    The architecture includes two interconnected fridge modules hosting algorithmic time-ordered subcircuit widgets and
-    T-factories. The two modules run interleaving subgraphs. When a module grows the graph by preparing a new subgraph
-    inside, the other in contrast consumes the prior subgraph, which is assumed to always take longer than any graph
-    preparation. The quantum bus inside both modules is bilinear and ancilla qubits are laid out in a comb-like pattern.
-    Both module host an equal number of T-factory widgets inside, which feed T states internally to the fridge that is
-    consuming the subgraph.
+    The number if allocated physical qubits, `total_num_physical_qubits`, is always smaller or equal to the fixed total
+    number of available physical qubits. We perform a component allocation trying to minimize the number of
+    `unallocated physical qubits`, which sets the requited and fixed total physical count of the module as close as
+    possible. For details of the intra-module fault-tolerant architecture with T-state parallelization and explicit
+    component allocation see `hardware_components.py` and the RRE manuscript arXiv:2406.06015.
 
-    Users may switch to a single-fridge architecture (with T-factories inside) by appropriately configuring
+    Users may switch to a single-fridge architecture (with internal T-factories) by appropriately configuring
     `inter_handover_timescale_sec`, `qcycle_char_timescale_ns`, and `processor.num_qubits` in `params.yaml`. One can
-    also set `num_intermodule_pipes` to speed-up subgraph handover to any desired number.
+    also set `num_pipes_per_intermodule_connection` to speed-up subgraph handover to any desired rate.
     """
 
     def __init__(
         self,
-        name: str = "Total required physical qubits",
-        short_name: str = "total_req_physical_qubits",
-        description: str = "Total required physical qubits",
+        name: str = "Number of allocated physical qubits per module",
+        short_name: str = "num_alloc_physical_qubits_per_module",
+        description: str = "Number of allocated physical qubits per module",
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -207,61 +379,69 @@ class ReqPhysicalQubits(Resource):
         """Return calculated value of physical qubits.
 
 
-        :param experiment: experiment to calculate the total number of qubits for.
+        :param experiment: experiment to calculate the required number of qubits per module.
         """
-        delta_val = experiment.graph_items.delta or 0
-        return (
-            2 * delta_val * find_physq_perpatch(experiment.distance)
-            + experiment.num_t_factories * experiment.widget.qubits
+        physq_per_patch = find_physq_per_patch(experiment.distance)
+        return int(
+            math.ceil((experiment.graph_items.delta or 0) / experiment.num_modules_per_leg) * 2 * physq_per_patch
+            + (
+                +experiment.intra_component_counts.num_t_factories * experiment.widget.qubits
+                + experiment.intra_component_counts.len_transfer_bus * physq_per_patch
+            )
         )
 
 
 class InputLogicalQubits(Resource):
-    """Number of logical qubits in the input circuit."""
+    """
+    Number of logical qubits or width of the complete input algorithm.
+
+    For the time-sliced widgetization we perform on the input algorithm, all widgets have the same number of output and
+    input nodes equal to this number.
+    """
 
     def __init__(
         self,
-        name: str = "Input Logical Qubits",
-        short_name: str = "input_log_qubits",
-        description: str = "Number of logical qubits in the input algorithm",
+        name: str = "Input logical qubits",
+        short_name: str = "input_logical_qubits",
+        description: str = "Number of algorithmic logical qubits",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
         """Return the number of logical qubits in the input circuit.
 
-        :param experiment: experiment to calculate the number of logical qubits for.
+        :param experiment: experiment to calculate the number of algorithmic logical qubits for.
         """
-        return experiment.input_log_qubits
+        return experiment.input_logical_qubits
 
 
 class DiamondNormEps(Resource):
-    """Diamond norm eps value for gate-synth ops to decompose arbitrary Rz's to Clifford+T."""
+    """Diamond norm epsilon-value for gate-synth decomposition of arbitrary Rz's to Clifford+T."""
 
     def __init__(
         self,
-        name: str = "Diamond norm eps",
+        name: str = "Diamond norm epsilon",
         short_name: str = "diamond_norm_eps",
         description: str = "Diamond-norm epsilon for gate-synth decompositions, eps",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> float:
-        """Return the diamond norm eps value.
+        """Return the diamond norm epsilon.
 
-        :param experiment: experiment to calculate the diamond norm for.
+        :param experiment: experiment to calculate the diamond norm epsilon for.
         """
         return experiment.diamond_norm_eps
 
 
 class TCount(Resource):
-    """Input circuit's total T-count when one performs all the required gate-synth ops."""
+    """Total T-count of input circuit after performing all the required gate-synth operations."""
 
     def __init__(
         self,
-        name: str = "T count",
+        name: str = "T-count",
         short_name: str = "t_count",
-        description: str = "Total number of T-basis measurements required at the distill-consump stage, T-count",
+        description: str = "Total number of T-basis measurements required at the consumption stage, T-count",
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -274,10 +454,13 @@ class TCount(Resource):
 
 
 class TDepth(Resource):
-    """Estimated T-depth for the input logical circuit."""
+    """Estimates effective T-depth of the input circuit after performing all the required gate-synth operations."""
 
     def __init__(
-        self, name: str = "Circuit T-depth", short_name: str = "t_depth", description: str = "Circuit T-depth"
+        self,
+        name: str = "Circuit T-depth",
+        short_name: str = "t_depth",
+        description: str = "Circuit's effective T-depth",
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -286,23 +469,26 @@ class TDepth(Resource):
 
         :param experiment: experiment to calculate the T depth for.
         """
-        node_items = experiment.graph_items
-        if node_items.delta in [None, 0]:
-            raise RuntimeError(f"Captured delta={node_items.delta}, making TDepth calculations impossible.")
+        delta = experiment.graph_items.delta or 0
+        if delta == 0:
+            raise RuntimeError(f"Captured delta={delta}, making T-depth calculations infeasible.")
         else:
-            delta = node_items.delta or 0
-        t_depth = math.ceil(node_items.t_count() / delta)
-        return t_depth
+            return math.ceil(experiment.graph_items.t_count() / delta)
 
 
 class InitRZCount(Resource):
-    """Initial non-Clifford-angle RZ count for the input circuit."""
+    """
+    The number of arbitrary (non-Clifford) angle RZ gates in the input circuit.
+
+    The gates can be written explicitly or contained within other logical gates. All Rz gates must undergo
+    gate-synthesis decomposition to Clifford+T at the end, during the consumption stage.
+    """
 
     def __init__(
         self,
-        name: str = "RZ Count",
+        name: str = "RZ count",
         short_name: str = "rz_count",
-        description: str = "Number of Rz unitaries with non-Clifford angles in the initial logical circuit, Rz-count",
+        description: str = "Number of arbitrary-rotation Rz gates in the input logical circuit, Rz-count",
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -315,14 +501,18 @@ class InitRZCount(Resource):
 
 
 class InitTCount(Resource):
-    """Number of initial logical T gates for the input circuit."""
+    """
+    The number of logical T and TDagger gates in the complete input circuit.
+
+    The gates can be written explicitly or contained within other logical gates. We perform this count
+    before performing gate-synthesis Clifford+T decomposition of arbitrary-angle Rz-gates.
+    """
 
     def __init__(
         self,
-        name: str = "Initial T Count",
-        short_name: str = "init_T_count",
-        description: str = """"Number of the T gates in the initial logical circuit prior to performing Clifford+T
-            decompositions.""",
+        name: str = "Initial T-count",
+        short_name: str = "init_t_count",
+        description: str = "Number of logical T,TDagger-gates in the initial circuit before performing gate-synth",
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -335,7 +525,7 @@ class InitTCount(Resource):
 
 
 class InitCliffordCount(Resource):
-    """Number of explicit logical Clifford gates for the input circuit."""
+    """Number of explicit logical Clifford gates in the complete input circuit."""
 
     def __init__(
         self,
@@ -354,84 +544,108 @@ class InitCliffordCount(Resource):
 
 
 class GraphN(Resource):
-    """N-value (size) of the complete graph state."""
+    """A resource class for the approximate size of the complete graph state."""
 
-    def __init__(self, name: str = "N", short_name: str = "N", description: str = "Graph nodes, N") -> None:
+    def __init__(
+        self, name: str = "Graph size", short_name: str = "N", description: str = "Number of graph nodes, N"
+    ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
-        """Return the graph's N value.
+        """Return the graph size.
 
-        :param experiment: experiment to calculate the graph's N value for.
+        :param experiment: experiment to calculate the graph size for.
         """
         return experiment.graph_items.big_n or 0
 
 
 class ConsumpScheduleSteps(Resource):
-    """Total number of measurement steps for graph consumption scheduling, S_consump."""
+    """Total number of sequential measurement steps in consumption schedule over all widgets (repeated or not)."""
 
     def __init__(
         self,
-        name: str = "S_consump",
-        short_name: str = "S_consump",
-        description: str = "Graph S for consump schedule",
+        name: str = "Consumption schedule size",
+        short_name: str = "consumption_schedule_size",
+        description: str = "Total number of consumption schedule measurement steps over all widgets.",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
-        """Return the graph's schedule steps.
+        """Return total number of graph consumption measurement steps over all widgets.
 
-        :param experiment: experiment to calculate the graphs schedule for.
+        :param experiment: experiment to count the graphs schedule steps.
         """
-        return experiment.graph_items.big_s_consump()
+        return experiment.graph_items.big_s_consump or 0
 
 
 class PrepScheduleSteps(Resource):
-    """Total number of measurement steps for graph initialization scheduling, S_prep."""
+    """Total number of preparation schedule measurement steps over all widgets (repeated or not)."""
 
     def __init__(
         self,
-        name: str = "S_prep",
-        short_name: str = "S_prep",
-        description: str = "Graph S for prep schedule",
+        name: str = "Preparation schedule size",
+        short_name: str = "preparation_schedule_size",
+        description: str = "Total number of preparation schedule measurement steps over all widgets",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
-        """Return the graph's preparation schedule steps.
+        """Return total number of graph preparation measurement steps over all widgets.
 
-        :param experiment: experiment to calculate the graph preparation schedule steps for.
+        :param experiment: experiment to count the graph preparation schedule steps.
         """
-        return experiment.graph_items.big_s_prep()
+        return experiment.graph_items.big_s_prep or 0
 
 
-class MaxIONodes(Resource):
+class NumWidgetSteps(Resource):
     """
-    Maximum number of output, or equivalently input, nodes in the output_nodes and input_nodes of graph_items.
+    Total number of widget repetitions or time steps in the input algorithm.
 
-    For the time-sliced widgetization we perform on the input algorithm, all widgets have the same output and input
-    nodes, equal to this reported number.
+    If this is larger than one, a widgetization by segmenting the algorithm in the time-direction was performed. This
+    parameter can become larger than `num_distinct_widgets` as many repetition of a specific widget may exist.
     """
 
     def __init__(
         self,
-        name: str = "max_IO_nodes",
-        short_name: str = "max_IO_nodes",
-        description: str = "Maximum number of input/output nodes",
+        name: str = "Total number of widget steps",
+        short_name: str = "num_widget_steps",
+        description: str = "Total number of widget repetitions or widgetization time steps",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
-        """Return the maximum IO nodes.
+        """Return the number of widgetization time steps.
 
-        :param experiment: experiment to calculate the maximum IO nodes for.
+        :param experiment: experiment to calculate the total number of widgets for.
         """
-        output_nodes = experiment.graph_items.output_nodes if experiment.graph_items.output_nodes else [[]]
-        return max([len(subset) for subset in output_nodes])
+        return sum([value[1] for value in experiment.transpiled_widgets["widgets"].values()])
+
+
+class NumDistinctWidgets(Resource):
+    """
+    Number of distinct widgets in the input algorithm.
+
+    This parameter identifies the number of widgets that FTQC needs to compile.
+    """
+
+    def __init__(
+        self,
+        name: str = "Number of distinct widgets",
+        short_name: str = "num_distinct_widgets",
+        description: str = "Number of distinct widgets",
+    ) -> None:
+        super().__init__(name, short_name, description)
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return the number of distinct widgets.
+
+        :param experiment: experiment to calculate the number of widgets for.
+        """
+        return len(experiment.transpiled_widgets["widgets"].keys())
 
 
 class DecoderTock(Resource):
-    """Decoder tock (seconds)."""
+    """Decoder tock in seconds."""
 
     def __init__(
         self,
@@ -443,39 +657,26 @@ class DecoderTock(Resource):
         super().__init__(name, short_name, description, unit)
 
     def get_value(self, experiment: Experiment) -> float:
-        """Return the decoder tock time.
-
-        Based on the first equation of Sec. II.B. of [Chubb 2021, arXiv:2101.04125]. Note a single-core unit is
-        responsible for d-sweeps, no parallelization or staggered architecture is considered here.
+        """Return the decoder tock time in seconds.
 
         :param experiment: experiment to calculate the decoder tock time for.
         """
-        nnn = 2 * find_physq_perpatch(experiment.distance) - 1  # number of decoding tensors in a logical patch
-        nnn0 = 2 * find_physq_perpatch(96) - 1  # number of decoding tensors in a logical patch (reference machine)
-        bond_dim0 = 20
-        bond_dim = experiment.bond_dim
-        time_scale = experiment.decoder_char_timescale_sec
-        numerator = nnn * (math.log(nnn) + math.pow(bond_dim, 3))
-        denom = nnn0 * (math.log(nnn0) + math.pow(bond_dim0, 3))
-        decoder_patch_time_sec = (numerator / denom) * time_scale
-        return experiment.distance * decoder_patch_time_sec
+        return experiment.distance * experiment.decoder_char_timescale_sec
 
 
 class QuantumIntraTock(Resource):
-    """Intra-modular tock (seconds) for surface code operations and parity measurements at consumption stage."""
+    """Intra-modular tock (seconds) for lattice surgery and consumption stage operations."""
 
     def __init__(
         self,
         name: str = "Quantum Tock",
         short_name: str = "quantum_tock",
-        description: str = "Quantum intra tock for consumption stage (seconds)",
+        description: str = "Quantum intra-modular tock for graph processing (seconds)",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> float:
-        """Return the quantum tock time.
-
-        Note a single unit is responsible for d-sweeps, no parallelization or staggered arch is considered.
+        """Return the tock time for all intra-module quantum operations.
 
         :param experiment: experiment to calculate the quantum tock time for.
         """
@@ -483,13 +684,13 @@ class QuantumIntraTock(Resource):
 
 
 class TStateTock(Resource):
-    """Intra-modular tock (seconds) to both distill and inject a purified T-state for graph consumption."""
+    """Intra-modular tock (seconds) to distill a purified T-state required for graph consumption."""
 
     def __init__(
         self,
-        name: str = "T-state Distill-transfer Tock",
+        name: str = "T-state distillation tock",
         short_name: str = "t_state_tock",
-        description: str = "Intra-module tock for T-state injections and transfers (seconds)",
+        description: str = "Intra-module tock for T-state distillations (seconds)",
         unit: str = "second",
     ) -> None:
         super().__init__(name, short_name, description, unit)
@@ -499,16 +700,16 @@ class TStateTock(Resource):
 
         :param experiment: experiment to calculate the T state tock time for.
         """
-        return 8 * (experiment.distance + experiment.widget.cycles) * experiment.system_architecture.intra_qcycle_sec
+        return 8 * experiment.widget.cycles * experiment.system_architecture.intra_qcycle_sec
 
 
 class AvailPhysicalQubits(Resource):
-    """Total number of physical qubits available in the both modules of the FTQC"""
+    """Total number of physical qubits available across all modules of the FTQC."""
 
     def __init__(
         self,
         name: str = "Total number of available physical qubits",
-        short_name: str = "avail_physical_qubits",
+        short_name: str = "total_avail_physical_qubits",
         description: str = "Total number of available physical qubits",
     ) -> None:
         super().__init__(name, short_name, description)
@@ -518,17 +719,17 @@ class AvailPhysicalQubits(Resource):
 
         :param experiment: experiment to calculate the available physical qubits for.
         """
-        return 2 * experiment.system_architecture.qpu.num_qubits
+        return 2 * experiment.num_modules_per_leg * experiment.system_architecture.qpu.num_qubits
 
 
 class AvailLogicalQubits(Resource):
-    """Total number of logical qubits available in the both modules of the FTQC."""
+    """The number of logical qubits available per module of the FTQC."""
 
     def __init__(
         self,
-        name: str = "Total number of available logical qubits",
-        short_name: str = "avail_logical_qubits",
-        description: str = "Total number of available logical qubits",
+        name: str = "Available logical qubits per module",
+        short_name: str = "avail_logical_qubits_per_module",
+        description: str = "Number of available logical qubits per module",
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -537,37 +738,105 @@ class AvailLogicalQubits(Resource):
 
         :param experiment: experiment to calculate the available logical qubits for.
         """
-        return experiment.available_logical_qubits
+        return experiment.intra_component_counts.edge_logical**2
 
 
 class UnallocLogicalQubits(Resource):
-    """Minimum number of left-over unallocated logical qubits in each of the modules considering all operations."""
+    """Total number of leftover (unallocated) logical qubits considering all modules and operations of the FTQC."""
 
     def __init__(
         self,
-        name: str = "Minimum number of unallocated logical qubits",
-        short_name: str = "unalloc_logical_qubits",
-        description: str = "Minimum number of unallocated logical qubits",
+        name: str = "Total number of unallocated logical qubits",
+        short_name: str = "total_unallocated_logical_qubits",
+        description: str = "Total number of unallocated logical qubits considering all modules and operations",
     ) -> None:
         super().__init__(name, short_name, description)
 
     def get_value(self, experiment: Experiment) -> int:
-        """Return the number of unallocated qubits per fridge.
+        """Return the number of unallocated qubits per module.
 
-        :param experiment: experiment to calculate the unallocated logical qubits for.
+        :param experiment: experiment to count the unallocated logical qubits.
         """
-        return experiment.available_logical_qubits - (experiment.graph_items.delta or 0)
+        return 2 * int(experiment.intra_component_counts.unalloc_logical_qubits) * experiment.num_modules_per_leg
 
 
-class DistStageDecodingCores(Resource):
-    """Maximum number of concurrent decoding cores required at the distill-inject-consume stage."""
+class UnallocPhysicalQubits(Resource):
+    """Total number of unallocated physical qubits considering all modules and operations of the FTQC."""
+
+    def __init__(
+        self,
+        unalloc_logical_qubits: UnallocLogicalQubits,
+        name: str = "Total unallocated physical qubits",
+        short_name: str = "total_unallocated_physical_qubits",
+        description: str = "Total number of unallocated physical qubits considering all modules and operations",
+    ) -> None:
+        super().__init__(name, short_name, description)
+        self.unalloc_logical_qubits = unalloc_logical_qubits
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return the number of unallocated physical qubits per module.
+
+        :param experiment: experiment to count the unallocated physical qubits for.
+        """
+        return self.unalloc_logical_qubits.get_value(experiment) * find_physq_per_patch(experiment.distance)
+
+
+class AllocLogicalQubits(Resource):
+    """Total number of allocated logical qubits considering all modules and operations of the FTQC."""
+
+    def __init__(
+        self,
+        name: str = "Total allocated logical qubits",
+        short_name: str = "total_allocated_logical_qubits",
+        description: str = "Total number of allocated logical qubits considering all modules and operations",
+    ) -> None:
+        super().__init__(name, short_name, description)
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return the number of allocated qubits per module.
+
+        :param experiment: experiment to calculate the allocated logical qubits for.
+        """
+        return (
+            2
+            * (
+                experiment.intra_component_counts.edge_logical**2
+                - int(experiment.intra_component_counts.unalloc_logical_qubits)
+            )
+            * experiment.num_modules_per_leg
+        )
+
+
+class AllocPhysicalQubits(Resource):
+    """Total number of allocated physical qubits considering all modules and operations of the FTQC."""
+
+    def __init__(
+        self,
+        alloc_logical_qubits: AllocLogicalQubits,
+        name: str = "Total allocated physical qubits",
+        short_name: str = "total_allocated_physical_qubits",
+        description: str = "Total number of allocated physical qubits considering all modules and operations",
+    ) -> None:
+        super().__init__(name, short_name, description)
+        self.alloc_logical_qubits = alloc_logical_qubits
+
+    def get_value(self, experiment: Experiment) -> int:
+        """Return the number of unallocated physical qubits per module.
+
+        :param experiment: experiment to count the unallocated physical qubits.
+        """
+        return self.alloc_logical_qubits.get_value(experiment) * find_physq_per_patch(experiment.distance)
+
+
+class ConsumpStageDecodingCores(Resource):
+    """The maximum number of concurrent decoding cores running at the consumption stages"""
 
     def __init__(
         self,
         decoder_tock: DecoderTock,
-        name: str = "Distill Decoding Cores",
-        short_name: str = "distill_concurrentcores_decoding",
-        description: str = "Number of concurrent decoding cores at distillation-consumption stage",
+        name: str = "Number of consumption stage decoding cores",
+        short_name: str = "num_consump_concurrent_cores_decoding",
+        description: str = "Number of concurrent decoding cores running at consumption stages",
     ) -> None:
         """
         :param decoder_tock: decoder tock (secs).
@@ -576,51 +845,16 @@ class DistStageDecodingCores(Resource):
         self.decoder_tock = decoder_tock
 
     def get_value(self, experiment: Experiment) -> int:
-        """Return number of decoding cores used at distillation stage.
+        """Return number of decoding cores required at the consumption stage.
 
-        We assume that the TN decoder of [Chubb 2021, arXiv:2101.04125] is to be used. The scaling relations were
-        derived from the same reference.
-
-        :param experiment: experiment to calculate the decoder tock for.
+        :param experiment: experiment to count the decoder cores.
         """
         q_tock = 8 * experiment.distance * experiment.system_architecture.intra_qcycle_sec
         return math.ceil(self.decoder_tock.get_value(experiment) / q_tock)
 
 
-class DistillStageDecodingMemory(Resource):
-    """Memory required for decoding at distillation-consumption stage as the (sub)graph is consumed."""
-
-    def __init__(
-        self,
-        distill_concurrent_cores: DistStageDecodingCores,
-        name: str = "Distillation decoding memory",
-        short_name: str = "distill_decoding_maxmem_MB",
-        description: str = "Max decoding memory required at distillation stage (MBytes)",
-        unit: str = "MBytes",
-    ) -> None:
-        """
-        :param distill_concurrent_cores: number of CPU cores required for distillation.
-        """
-        super().__init__(name, short_name, description, unit)
-        self.distill_concurrent_cores = distill_concurrent_cores
-
-    def get_value(self, experiment: Experiment) -> float:
-        """Maximum random access memory used in MBytes at any given time for distillation stage.
-
-        :param experiment: experiment to calculate the decoder memory for.
-        """
-        bond_dim = experiment.bond_dim
-        num = 2 * find_physq_perpatch(experiment.distance) - 1
-        return (
-            self.distill_concurrent_cores.get_value(experiment)
-            * (num + math.sqrt(num) * math.pow(bond_dim, 2))
-            * 8
-            * 1e-6
-        )
-
-
 class ChipArea(Resource):
-    """Total area required for the QPU."""
+    """Total area required for all modules of the QPU."""
 
     def __init__(
         self,
@@ -636,7 +870,7 @@ class ChipArea(Resource):
 
         :param experiment: experiment to calculate the chip area for.
         """
-        return experiment.system_architecture.qpu.processor_area_sqmm * 1e-6 * 2
+        return experiment.system_architecture.qpu.processor_area_sqmm * experiment.num_modules_per_leg * 1e-6 * 2
 
 
 class NumberCouplers(Resource):
@@ -644,9 +878,9 @@ class NumberCouplers(Resource):
 
     def __init__(
         self,
-        name: str = "Number of couplers",
-        short_name: str = "number_of_couplers",
-        description: str = "Number of couplers",
+        name: str = "Total number of couplers",
+        short_name: str = "total_number_of_couplers",
+        description: str = "Total number of couplers",
     ) -> None:
         super().__init__(name, short_name, description)
 
@@ -655,35 +889,36 @@ class NumberCouplers(Resource):
 
         :param experiment: experiment to calculate the number of couplers for.
         """
-        return experiment.system_architecture.qpu.num_couplers * 2
+        return experiment.system_architecture.qpu.num_couplers * 2 * experiment.num_modules_per_leg
 
 
-class DecodingDistillationPower(Resource):
-    """Decoding power used during distillation-consumption stage.
+class DecodingConsumptionPower(Resource):
+    """Decoding power used at consumption stage.
 
-    Based on a 100W reference CPU units.
+    Based on a 100W reference decoding core (aligned with modern GPU or FPGA-based units).
     """
 
     def __init__(
         self,
-        dist_cores: DistStageDecodingCores,
-        name: str = "Distill Stage Decoding Power",
-        short_name: str = "distill_decoding_power_kW",
-        description: str = "Decoding power at distillation stage (kW)",
+        consump_cores: ConsumpStageDecodingCores,
+        name: str = "Consumption Stage Decoding Power",
+        short_name: str = "consump_decoding_power_kW",
+        description: str = "Decoding power at consumption stage (kW)",
         unit="kW",
     ) -> None:
         """
-        :param dist_cores: number of CPU cores used for distillation.
+        :param consump_cores: number of concurrent decoding cores used at each consumption step.
         """
         super().__init__(name, short_name, description, unit)
-        self.dist_cores = dist_cores
+        self.consump_cores = consump_cores
 
     def get_value(self, experiment: Experiment) -> float:
-        """Return decoding power used during distillation.
+        """Return decoding power used during consumption stage.
 
         :param experiment: experiment to calculate the decoding power for.
         """
-        return self.dist_cores.get_value(experiment) * 100 * 0.001
+        ref_pow_watt = 100
+        return self.consump_cores.get_value(experiment) * ref_pow_watt * 0.001
 
 
 class PowerDissipation(Resource):
@@ -692,10 +927,10 @@ class PowerDissipation(Resource):
     def __init__(
         self,
         thermal_loads_index: int = 0,
-        name: str = "power_dissipation_4K_kW",
+        name: str = "Power dissipation at 4K stage",
         short_name: str = "power_dissip_4K_kW",
         unit: str = "kW",
-        description: str = "Total power dissipation during the 4K stage (kW)",
+        description: str = "Total power dissipation at 4K stage (kW)",
     ) -> None:
         """
         :param thermal_loads_index: integer to specify which thermal load to use. 4K: tl_index=0, or mxc: tl_index=1
@@ -704,61 +939,64 @@ class PowerDissipation(Resource):
         self.tl_index = thermal_loads_index
 
     def get_value(self, experiment: Experiment) -> float:
-        """Return power dissipation at the 4K (tl_index=0) or mxc (tl_index=1) stages.
+        """Return power dissipation at the 4K (tl_index=0) or MXC (tl_index=1) stages.
 
         :param experiment: experiment to calculate the power dissipation for.
         """
-        therm_loads = experiment.system_architecture.calc_thermal_loads()
+        therm_loads = experiment.system_architecture.calc_thermal_loads(experiment.num_modules_per_leg)
         return (therm_loads[self.tl_index].power_dissipation_watt or 0) * 0.001
 
 
-class TotalIntraQOpsTime(Resource):
-    """Total time for the intra-module surface code ops required for graph consumption (excludes T-state transfers).
-
-    Here, we assume a staggered architecture where there are enough multiple reference digital units to processes
-    overlapping decoding tasks for a single widget. Therefore per-widget wall-time is only delayed by an overall
-    decoding delay.
-    """
+class TotalConsumpOpsTime(Resource):
+    """Total time required for consumption ops including delays from prep and T-distillations, excluding hand-overs."""
 
     def __init__(
         self,
-        name: str = "Total intra-module quantum ops time",
-        short_name: str = "tot_intra_q_ops_sec",
-        description: str = "Total intra-module quantum ops time (sec)",
+        name: str = "Total graph consump ops time",
+        short_name: str = "total_consump_ops_sec",
+        description: str = "Total graph consumption operations time (sec)",
         unit="sec",
     ) -> None:
         super().__init__(name, short_name, description, unit)
 
     def get_value(self, experiment: Experiment) -> float:
-        """Return the total time taken by intra-module quantum ops.
+        """Return the total time taken for graph consumption ops.
 
-        :param experiment: experiment to calculate the total intra Q ops time for.
+        :param experiment: experiment to calculate the total graph consumption time for.
         """
-        return experiment.consump_sched_times.intra_consump_ops_time_sec
+        intra_comps_counts = experiment.intra_component_counts
+        delta = experiment.graph_items.delta or 0
+        num_modules = experiment.num_modules_per_leg
+        if experiment.graph_items.t_counting_cond:
+            n_row_qbus = max(math.floor((math.ceil(delta / num_modules) + 1) / intra_comps_counts.l_qbus), 1)
+            n2 = min(
+                (
+                    intra_comps_counts.num_t_factories * 4
+                    if experiment.widget.cond_20to4
+                    else intra_comps_counts.num_t_factories
+                ),
+                n_row_qbus,
+            )
+            len_t_measures = experiment.graph_items.t_count_init
+            len_rot_measures = experiment.graph_items.rz_count
+            t_length_unit = experiment.graph_items.t_length_unit
+            total_seqs_distill = math.ceil((len_t_measures + t_length_unit * len_rot_measures) / n2)
+            total_seqs_consump = t_length_unit * math.ceil(len_rot_measures / n2) + math.ceil(len_t_measures / n2)
+            # We assume the graph prep times are negligible for the T-counting case. Additionally, we assume graph
+            # consumption and T-distillations are performed sequentially.
+            intra_consump_ops_time_sec = (
+                (total_seqs_distill * experiment.widget.cycles + total_seqs_consump * experiment.distance)
+                * 8
+                * experiment.system_architecture.intra_qcycle_sec
+            )
+        else:
+            intra_consump_ops_time_sec = experiment.consump_sched_times.intra_consump_ops_time_sec
 
-
-class TotalTStateTime(Resource):
-    """Total intra-module time to distill and inject T-states for surface code ops and parity measurements."""
-
-    def __init__(
-        self,
-        name: str = "Total intra-module time for T-state transfers",
-        short_name: str = "tot_t_state_time_sec",
-        description: str = "Total intra-module T-state transfer time (sec)",
-        unit: str = "sec",
-    ) -> None:
-        super().__init__(name, short_name, description, unit)
-
-    def get_value(self, experiment: Experiment) -> float:
-        """Return the module execution time.
-
-        :param experiment: experiment to calculate the total T state time for.
-        """
-        return experiment.consump_sched_times.intra_t_injection_time_sec
+        return intra_consump_ops_time_sec
 
 
 class TotalHandoverTime(Resource):
-    """Total subgraph handover time."""
+    """Total subgraph handover time to teleport all output to input nodes on the next leg of the macro-architecture."""
 
     def __init__(
         self,
@@ -777,14 +1015,60 @@ class TotalHandoverTime(Resource):
         return experiment.consump_sched_times.inter_handover_ops_time_sec
 
 
+class OverallTDistillDelay(Resource):
+    """Overall delay added to the total consumption time to distill additional T-states."""
+
+    def __init__(
+        self,
+        name: str = "Total delay for T-state distillations",
+        short_name: str = "total_t_distill_delay_sec",
+        description: str = "Total T-state distillation delay (sec)",
+        unit: str = "sec",
+    ) -> None:
+        super().__init__(name, short_name, description, unit)
+
+    def get_value(self, experiment: Experiment) -> float:
+        """Return the overall delay required to distill addition magic states.
+
+        :param experiment: experiment to calculate the total T-state delay for.
+        """
+        return experiment.consump_sched_times.intra_distill_delay_sec
+
+
+class OverallPrepDelay(Resource):
+    """Overall delay added to the total consumption time to prepare the next subgraphs in the schedule."""
+
+    def __init__(
+        self,
+        name: str = "Total delay for graph state preparation",
+        short_name: str = "total_graph_prep_delay_sec",
+        description: str = "Total graph preparation delay (sec)",
+        unit: str = "sec",
+    ) -> None:
+        super().__init__(name, short_name, description, unit)
+
+    def get_value(self, experiment: Experiment) -> float:
+        """Return the graph prep delay time.
+
+        :param experiment: experiment to calculate the total preparation delay.
+        """
+        return experiment.consump_sched_times.intra_prep_delay_sec
+
+
 class OverallDecodingDelay(Resource):
-    """Overall decoding delay."""
+    """
+    Overall decoding delay in sec.
+
+    Here, we assume a staggered architecture where there are enough multiple reference digital units to processes
+    overlapping decoding tasks for a single widget. Therefore per-widget wall-time is only delayed by an overall
+    decoding delay.
+    """
 
     def __init__(
         self,
         decoder_tock: DecoderTock,
-        total_intra_qops_time: TotalIntraQOpsTime,
-        total_t_state_time: TotalTStateTime,
+        total_consump_ops_time: TotalConsumpOpsTime,
+        overall_t_state_delay: OverallTDistillDelay,
         name: str = "Overall decoding delay",
         short_name: str = "overall_decoding_delay_sec",
         description: str = "Overall decoding delay (fully classical, sec)",
@@ -792,13 +1076,13 @@ class OverallDecodingDelay(Resource):
     ) -> None:
         """
         :param decoder_tock: decoder tock.
-        :param tot_intra_qops_time: Total time for algorithmic surface code ops and parity meas for graph consumption.
-        :param total_t_state_time: Total T state distillation and injection time.
+        :param total_intra_qops_time: Total time for algorithmic surface code ops and parity meas for graph consumption.
+        :param overall_t_state_delay: Total T state distillation and injection time.
         """
         super().__init__(name, short_name, description, unit)
         self.decoder_tock = decoder_tock
-        self.total_intra_qops_time = total_intra_qops_time
-        self.total_t_state_time = total_t_state_time
+        self.total_qops_time = total_consump_ops_time
+        self.overall_distill_delay = overall_t_state_delay
 
     def get_value(
         self,
@@ -810,124 +1094,108 @@ class OverallDecodingDelay(Resource):
         """
         dec_tock = self.decoder_tock.get_value(experiment)
         q_tock = 8 * experiment.distance * experiment.system_architecture.intra_qcycle_sec
-        magicstate_tock = (
-            8 * (experiment.distance + experiment.widget.cycles) * experiment.system_architecture.intra_qcycle_sec
-        )
-        tot_distill_delay_sec = 0.0
-        reps_consump = math.ceil(self.total_intra_qops_time.get_value(experiment) / q_tock)
-        reps_magicstate = math.ceil(self.total_t_state_time.get_value(experiment) / magicstate_tock)
+        magicstate_tock = 8 * experiment.widget.cycles * experiment.system_architecture.intra_qcycle_sec
+        total_qops_time = self.total_qops_time.get_value(experiment) - self.overall_distill_delay.get_value(experiment)
+        total_decoding_delay_sec = 0.0
+        reps_consump = math.ceil(total_qops_time / q_tock)
+        reps_magicstate = math.ceil(self.overall_distill_delay.get_value(experiment) / magicstate_tock)
         if dec_tock > q_tock:  # If dec_tock is longer, we need to add the delay for each consumption cycle
-            tot_distill_delay_sec += reps_consump * (dec_tock - q_tock)
+            total_decoding_delay_sec += reps_consump * (dec_tock - q_tock)
         if dec_tock > magicstate_tock:  # If dec_tock is longer, we need to add the delay for each distill-inject cycle
-            tot_distill_delay_sec += reps_magicstate * (dec_tock - magicstate_tock)
-        return tot_distill_delay_sec
+            total_decoding_delay_sec += reps_magicstate * (dec_tock - magicstate_tock)
+        return total_decoding_delay_sec
 
 
-class TotalFTTime(Resource):
-    """Total time considering all non-simultaneous ops of the FTQC."""
+class FTWallTime(Resource):
+    """Fault-tolerant wall-time considering all non-simultaneous ops of the FTQC over a single algorithmic step."""
 
     def __init__(
         self,
-        quant_tock: QuantumIntraTock,
-        total_intra_qops_time: TotalIntraQOpsTime,
+        total_consump_ops_time: TotalConsumpOpsTime,
         total_handover_time: TotalHandoverTime,
-        dec_delay: OverallDecodingDelay,
-        total_t_state_time: TotalTStateTime,
-        name: str = "Total FT Time",
-        short_name: str = "total_ft_time_sec",
-        description: str = "Total FT-hardware wall-time (upper bound, sec)",
+        overall_decoding_delay: OverallDecodingDelay,
+        name: str = "Fault-tolerant wall-time",
+        short_name: str = "algorithm_step_ft_time_sec",
+        description: str = "Fault-tolerant wall-time over a single algorithmic step (upper bound in seconds)",
         unit="sec",
     ) -> None:
         """
-        :param quant_tock: quantum tock for algorithmic surface code ops.
-        :param tot_intra_qops_time: total time for algorithmic surface code ops and parity meas for graph consumption.
+        :param total_intra_qops_time: total time for algorithmic surface code ops and parity meas for graph consumption.
         :param total_handover_time: total subgraph handover time.
         :param dec_delay: total time delay for decoding.
         :param total_t_state_time: total T state distillation and injection time.
         """
         super().__init__(name, short_name, description, unit)
-        self.total_intra_qops_time = total_intra_qops_time
-        self.dec_delay = dec_delay
-        self.total_t_state_time = total_t_state_time
+        self.total_intra_qops_time = total_consump_ops_time
+        self.dec_delay = overall_decoding_delay
         self.total_handover_time = total_handover_time
-        self.quantum_tock = quant_tock
 
     def get_value(
         self,
         experiment: Experiment,
     ) -> float:
-        """Return the total FT time.
+        """Return the fault-tolerant wall-time.
 
-        :param experiment: experiment to calculate the total fault tolerant time for.
+        :param experiment: experiment to calculate the fault-tolerant wall-time for.
         """
-        prep_sched = experiment.graph_items.prep_sched if experiment.graph_items.prep_sched else [[]]
-        first_widget_prep_time = len(prep_sched[0]) * self.quantum_tock.get_value(experiment)
         return (
-            first_widget_prep_time
-            + self.total_intra_qops_time.get_value(experiment)
-            + self.total_t_state_time.get_value(experiment)
+            self.total_intra_qops_time.get_value(experiment)
             + self.total_handover_time.get_value(experiment)
             + self.dec_delay.get_value(experiment)
         )
 
 
-class FullEvolutionTime(Resource):
-    """Total evolution time."""
+class TotalFTAlgorithmTime(Resource):
+    """Total fault-tolerant hardware time over all algorithmic steps (the full algorithm time)."""
 
     def __init__(
         self,
-        ft_time: TotalFTTime,
-        name: str = "Total evolution time",
-        short_name: str = "full_evolution_time_sec",
-        description: str = "Full evolution time (sec)",
+        ft_time: FTWallTime,
+        name: str = "Total fault-tolerant algorithm time",
+        short_name: str = "total_ft_algorithm_time_sec",
+        description: str = "Total fault-tolerant algorithm time (sec)",
         unit: str = "sec",
     ) -> None:
         """
-        :param ft_time: total FT-hardware time
+        :param ft_time: fault-tolerant hardware time over a single time step
         """
         super().__init__(name, short_name, description, unit)
         self.ft_time = ft_time
 
     def get_value(self, experiment: Experiment) -> float:
-        """Return the total evolution time.
+        """Return the total fault-tolerant time.
 
-        :param experiment: experiment to calculate the total evolution time for.
+        :param experiment: experiment to calculate the total fault-tolerant time for.
         """
-        return experiment.num_steps * self.ft_time.get_value(experiment)
+        return experiment.num_algorithm_steps * self.ft_time.get_value(experiment)
 
 
 class TotalFTEnergy(Resource):
-    """Total consumed power."""
+    """Upper bound to the total consumed energy accross all modules, operations, and algorithmic steps."""
 
     def __init__(
         self,
-        distill_concurrent_cores: DistStageDecodingCores,
-        avail_phys_qubits: AvailPhysicalQubits,
-        req_phys_qubits: ReqPhysicalQubits,
-        total_ft_time: TotalFTTime,
-        decoder_tock: DecoderTock,
+        consump_concurrent_cores: ConsumpStageDecodingCores,
+        total_ft_time: TotalFTAlgorithmTime,
         power_4k: PowerDissipation,
         power_mxc: PowerDissipation,
-        name: str = "Total FT energy",
+        name: str = "Total fault-tolerant hardware energy",
         short_name: str = "total_ft_energy_kWh",
-        description: str = "Total FT-hardware energy consumption (kWh)",
+        description: str = "Total fault-tolerant hardware energy consumption (kWh)",
         unit: str = "kWh",
     ) -> None:
         """
-        :param distill_concurrent_cores: no. of concurrent decoding cores required at the dist-consump stage.
+        :param consump_concurrent_cores: no. of concurrent decoding cores required at the consumption stage.
         :param avail_phys_qubits: no. of available physical qubits
-        :param req_phys_qubits: no. of required physical qubits
-        :param total_ft_time: total fault tolerant computation time
+        :param num_phys_qubits: no. of required physical qubits
+        :param total_ft_time: total fault-tolerant computation time
         :param decoder_tock: decoder tock (sec)
         :param power_4k: power dissipation at the 4K stage
         :param power_mxc: power dissipation at the MXC stage
         """
         super().__init__(name, short_name, description, unit)
-        self.distill_concurrent_cores = distill_concurrent_cores
-        self.avail_phys_qubits = avail_phys_qubits
-        self.req_phys_qubits = req_phys_qubits
+        self.consump_concurrent_cores = consump_concurrent_cores
         self.total_ft_time = total_ft_time
-        self.decoder_tock = decoder_tock
         self.power_4k = power_4k
         self.power_mxc = power_mxc
 
@@ -935,21 +1203,19 @@ class TotalFTEnergy(Resource):
         self,
         experiment: Experiment,
     ) -> float:
-        """Return total fault-tolerant hardware energy consumption.
+        """Return total fault-tolerant hardware energy consumption over all algorithmic step.
 
         :param experiment: experiment to calculate the total energy consumption for.
         """
         cooling_efficiency_4kelvin = 500  # W/W cooling for a 4K cryo-cooler
         cooling_efficiency_mxc = 1e9  # W/W cooling for a dilution refrigerator at 0.02K
-        repetitions = ((experiment.widget.cycles / experiment.distance) + 1) * experiment.graph_items.t_count()
+        # We assume a fixed number of concurrent decoding cores equal to `consump_concurrent_cores` are assigned to all
+        # decoding opertions, including graph preparation, consumption, handover, and T-distillation, which operate at a
+        # constant TPD of `ref_decode_watt` during `total_ft_time`.
+        max_decoder_cores = self.consump_concurrent_cores.get_value(experiment)
         ref_decode_watt = 100
         total_ft_time = self.total_ft_time.get_value(experiment)
-        decode_distill_energy = (
-            self.distill_concurrent_cores.get_value(experiment)
-            * ref_decode_watt
-            * repetitions
-            * self.decoder_tock.get_value(experiment)
-        )
+        decoder_energy = max_decoder_cores * ref_decode_watt * total_ft_time
         cooling_4k_energy = (
             self.power_4k.get_value(experiment) * total_ft_time * cooling_efficiency_4kelvin * 1000
         )  # already in kW, convert to W
@@ -958,7 +1224,7 @@ class TotalFTEnergy(Resource):
         )  # already in kW, convert to W
 
         # Note: Powers are not essentially the wall power, therefore, we need to consider efficiency
-        return (decode_distill_energy + cooling_4k_energy + cooling_mxc_energy) / 1000 / 3600
+        return (decoder_energy + cooling_4k_energy + cooling_mxc_energy) / 1000 / 3600
 
 
 class ResourceEstimator:
@@ -992,13 +1258,13 @@ class ResourceEstimator:
         experiment_attrs = {
             "graph_state_opt": self.experiment.graph_state_opt,
             "est_method": self.experiment.est_method,
-            "sims_time_sec": self.experiment.sims_time_sec,
+            "est_time_sec": self.experiment.est_time_sec,
             "version": self.experiment.version,
             "decomp_method": self.experiment.decomp_method,
             "target_p_algo": self.experiment.target_p_algo,
             "dist_widget_name": self.experiment.widget.name,
-            "num_intermodule_pipes": self.experiment.system_architecture.num_intermodule_pipes,
-            "num_timesteps": self.experiment.num_steps,
+            "num_pipes_per_intermodule_connection": self.experiment.system_architecture.num_pipes_per_intermodule_connection,  # noqa
+            "num_algorithm_steps": self.experiment.num_algorithm_steps,
         }
 
         if key == "short":
@@ -1008,7 +1274,6 @@ class ResourceEstimator:
                 )
             return {
                 **experiment_attrs,
-                **self.experiment.circuit_info,
                 **{resource.short_name: resource.get_value(self.experiment) for resource in self.resources},
             }
         if key == "name":
@@ -1019,8 +1284,8 @@ class ResourceEstimator:
     def to_console(self, key="description"):
         """Print results to console."""
         print(
-            "RRE: Estimated fault-tolerant resources required for the two fridge bilinear-q-bus architecture with "
-            "gate-synth at the measurement points:\n"
+            "\nRRE: Estimated fault-tolerant resources required for the two fridge bilinear quantum and T-transfer "
+            "buses architecture with gate-synth at the measurement points are:\n"
         )
         for desc, value in self.to_dict(key=key).items():  # type: ignore
             print(f"\t{desc}: {value}")
@@ -1068,35 +1333,23 @@ class DefaultResourceCollection(ResourceCollection):
     def build(self):
         """Create the default list of resources."""
         resources = []
-        resources.append(DistillWidgetQubits())
         resources.append(Distance())
-        resources.append(RequiredLogicalQubits())
+        resources.append(NumLogicalQubits())
         resources.append(NumTFactories())
-        resources.append(ReqQubitsTFactories())
-        resources.append(req_phys_q := ReqPhysicalQubits())
-        resources.append(TCount())
-        resources.append(avail_phys_q := AvailPhysicalQubits())
-        resources.append(MaxIONodes())
-        resources.append(decoder_tock := DecoderTock())
-        resources.append(quant_tock := QuantumIntraTock())
-        resources.append(TStateTock())
-        resources.append(dist_cores := DistStageDecodingCores(decoder_tock=decoder_tock))
-        resources.append(tot_q_ops_time := TotalIntraQOpsTime())
-        resources.append(tot_t_state_time := TotalTStateTime())
-        resources.append(tot_handover_time := TotalHandoverTime())
-        resources.append(
-            decode_delay := OverallDecodingDelay(
-                decoder_tock=decoder_tock,
-                total_intra_qops_time=tot_q_ops_time,
-                total_t_state_time=tot_t_state_time,
-            )
-        )
-        resources.append(power_4k := PowerDissipation(thermal_loads_index=0))
-        resources.append(power_mxc := PowerDissipation(thermal_loads_index=1))
-        resources.append(AvailLogicalQubits())
-        resources.append(UnallocLogicalQubits())
+        resources.append(memory_logical_qubits := MemoryLogicalQubits())
+        resources.append(MemoryPhysicalQubits(memory_logical_qubits=memory_logical_qubits))
+        resources.append(ancilla_logical_qubits := AncillaLogicalQubits())
+        resources.append(AncillaPhysicalQubits(ancilla_logical_qubits=ancilla_logical_qubits))
+        resources.append(TBufferLogicalQubits())
+        resources.append(TBufferPhysicalQubits())
+        resources.append(DistillWidgetLogicalQubits())
+        resources.append(DistillWidgetPhysicalQubits())
+        resources.append(TotalNumFridges())
+        resources.append(NumIntermoduleConnections())
+        resources.append(NumPhysicalQubits())
         resources.append(InputLogicalQubits())
         resources.append(DiamondNormEps())
+        resources.append(TCount())
         resources.append(TDepth())
         resources.append(InitRZCount())
         resources.append(InitTCount())
@@ -1104,27 +1357,46 @@ class DefaultResourceCollection(ResourceCollection):
         resources.append(GraphN())
         resources.append(ConsumpScheduleSteps())
         resources.append(PrepScheduleSteps())
-        resources.append(DistillStageDecodingMemory(distill_concurrent_cores=dist_cores))
+        resources.append(NumWidgetSteps())
+        resources.append(NumDistinctWidgets())
+        resources.append(decoder_tock := DecoderTock())
+        resources.append(QuantumIntraTock())
+        resources.append(TStateTock())
+        resources.append(AvailPhysicalQubits())
+        resources.append(AvailLogicalQubits())
+        resources.append(unalloc_logical_qubits := UnallocLogicalQubits())
+        resources.append(UnallocPhysicalQubits(unalloc_logical_qubits=unalloc_logical_qubits))
+        resources.append(alloc_logical_qubits := AllocLogicalQubits())
+        resources.append(AllocPhysicalQubits(alloc_logical_qubits=alloc_logical_qubits))
+        resources.append(consump_cores := ConsumpStageDecodingCores(decoder_tock=decoder_tock))
         resources.append(ChipArea())
         resources.append(NumberCouplers())
-        resources.append(DecodingDistillationPower(dist_cores=dist_cores))
+        resources.append(DecodingConsumptionPower(consump_cores=consump_cores))
+        resources.append(power_4k := PowerDissipation(thermal_loads_index=0))
+        resources.append(power_mxc := PowerDissipation(thermal_loads_index=1))
+        resources.append(total_consump_ops_time := TotalConsumpOpsTime())
+        resources.append(total_handover_time := TotalHandoverTime())
+        resources.append(overall_t_distill_delay := OverallTDistillDelay())
+        resources.append(OverallPrepDelay())
         resources.append(
-            ft_time := TotalFTTime(
-                total_intra_qops_time=tot_q_ops_time,
-                dec_delay=decode_delay,
-                total_t_state_time=tot_t_state_time,
-                quant_tock=quant_tock,
-                total_handover_time=tot_handover_time,
+            decode_delay := OverallDecodingDelay(
+                decoder_tock=decoder_tock,
+                total_consump_ops_time=total_consump_ops_time,
+                overall_t_state_delay=overall_t_distill_delay,
             )
         )
-        resources.append(FullEvolutionTime(ft_time=ft_time))
+        resources.append(
+            ft_walltime := FTWallTime(
+                total_consump_ops_time=total_consump_ops_time,
+                overall_decoding_delay=decode_delay,
+                total_handover_time=total_handover_time,
+            )
+        )
+        resources.append(total_ft_time := TotalFTAlgorithmTime(ft_time=ft_walltime))
         resources.append(
             TotalFTEnergy(
-                distill_concurrent_cores=dist_cores,
-                avail_phys_qubits=avail_phys_q,
-                req_phys_qubits=req_phys_q,
-                total_ft_time=ft_time,
-                decoder_tock=decoder_tock,
+                consump_concurrent_cores=consump_cores,
+                total_ft_time=total_ft_time,
                 power_4k=power_4k,
                 power_mxc=power_mxc,
             )

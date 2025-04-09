@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -39,7 +39,6 @@ def controller():
     return analysis.SweepController(
         param=param,
         values=values,
-        circ_path="foo.qasm",
         output_csv="output_directory/output.csv",
     )
 
@@ -88,13 +87,11 @@ class TestSweepController:
     def test_output_attribute_construction(self, controller):  # pylint: disable=W0621
         """Ensure that SweepController attributes are initialized properly."""
         should_be = [
-            "foo.qasm",
             Path("output_directory/output.csv"),
             Path("output_directory"),
             "output",
         ]
         actual = [
-            controller.circ_path,
             controller.output_filepath,
             controller.output_dir,
             controller.file_name,
@@ -152,7 +149,6 @@ class TestPerformSweep:
         analysis.perform_sweep(
             parameter,
             ",".join(parameters),
-            circ_path="foo.qasm",
             output_csv=str(temp_dir / "output.csv"),
         )
         actual = pd.read_csv(self.output_dir / "combined.csv", index_col=False)

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -35,7 +35,7 @@ echo
 echo "Testing Python package for $package $version ($include)."
 echo
 
-echo "Run: poetry run pytest --cov-report term-missing --cov=$include --cov-fail-under=95 tests"
+echo "Run: poetry run pytest --cov-report term-missing --cov=$include --cov-fail-under=85 tests"
 echo
 
 poetry run pytest --cov-report term-missing --cov=$include tests

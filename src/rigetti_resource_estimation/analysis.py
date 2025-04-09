@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -45,18 +45,16 @@ class SweepController:
     COMBINED_CSV_NAME = "combined.csv"
     PARAMS_DIR = Path("src/rigetti_resource_estimation")
 
-    def __init__(self, param: str, values: str, circ_path: str, output_csv: str) -> None:
+    def __init__(self, param: str, values: str, output_csv: str) -> None:
         """
         Initialize some common parameters.
 
         :param param: parameter that will be swept over.
         :param values: values, separated by commas, that will be assigned to the parameter during sweep.
-        :param circ_path: path to qasm file to run the resource estimation on.
         :param output_csv: path to output .csv, and filename template for the output CSV.
         """
         logging.info("Preparing sweep controller ....")
         self.values = values.split(",")
-        self.circ_path = circ_path
         self.output_csv = output_csv
         self.param = param
         self.output_filepath = Path(self.output_csv)
@@ -102,7 +100,7 @@ class SweepController:
         return self.PARAMS_DIR / self.BACKUP
 
 
-def perform_sweep(parameter: str, values: str, circ_path: str, output_csv: str) -> None:
+def perform_sweep(parameter: str, values: str, output_csv: str) -> None:
     """Perform the sweep over values for a specific parameter, save the resulting CSVs and combine them.
 
     :param parameter: parameter to sweep over. Should be of form 'key1.key2.key3.key4' where the '.' identifies level in
@@ -114,7 +112,7 @@ def perform_sweep(parameter: str, values: str, circ_path: str, output_csv: str) 
     """
     # Preparing the sweeper
     logging.info("Starting parameter sweeper ...")
-    sweep_cntl = SweepController(parameter, values, circ_path, output_csv)
+    sweep_cntl = SweepController(parameter, values, output_csv)
 
     logging.info("Backing up parameter file %s (%s)", sweep_cntl.params_path, os.getcwd())
     shutil.copy2(sweep_cntl.params_path, sweep_cntl.backup_path)  # backup params.yaml
@@ -132,10 +130,9 @@ def perform_sweep(parameter: str, values: str, circ_path: str, output_csv: str) 
         more_utils.update(params, sweep_cntl.param, val)
         config = rigetti_resource_estimation.Configuration(params)
 
-        # Create the cli command and run it
+        # Create the CLI command and run it
         logging.info("Running resource estimator ....")
         estimation_pipeline(
-            circ_path=sweep_cntl.circ_path,
             output_csv=output_path,
             graph_state_opt=sweep_cntl.graph_state_opt,
             config=config,
@@ -192,7 +189,7 @@ def sweep(parameter: str, values: str, circ_path: str, output_csv: str) -> None:
     :param circ_path: path to qasm file to run the resource estimation on.
     :param output_csv: path to output .csv, and filename template for output CSV.
     """
-    perform_sweep(parameter, values, circ_path, output_csv)
+    perform_sweep(parameter, values, output_csv)
 
 
 if __name__ == "__main__":

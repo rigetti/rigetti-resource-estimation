@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -38,12 +38,17 @@ check-poetry:  ## Check if poetry is available in the current shell.
 	@if ! command -v poetry &> /dev/null; then echo "Missing Poetry! (https://python-poetry.org/)"; \
 		exit 1; fi
 
+.PHONY: install-cabaliser  
+install-cabaliser:  ## Install cabaliser from source.
+	@git submodule update --init --recursive
+	$(MAKE) -C external/cabaliser/c_lib/
+
 .PHONY: poetry-install
-poetry-install:  check-poetry  ## Install into a Poetry virtual environment (quiet mode).
+poetry-install: check-poetry install-cabaliser  ## Install into a Poetry virtual environment.
 	@poetry install
 
 .PHONY: poetry-install-quiet
-poetry-install-quiet: check-poetry  ## Install into a Poetry virtual environment (quiet mode).
+poetry-install-quiet: check-poetry install-cabaliser  ## Install into a Poetry virtual environment (quiet mode).
 	@poetry install -q
 
 .PHONY: check-style  
@@ -76,7 +81,7 @@ test-examples: poetry-install-quiet  ## Test all notebooks in examples/; stores 
 	@./scripts/test-examples.sh
 
 .PHONY: run-examples
-run-examples: poetry-install-quiet  ## Estimate resources for QASMs at examples/input.
+run-examples: poetry-install-quiet  ## Estimate resources for the default input algorithms.
 	@./scripts/run-examples.sh
 
 .PHONY: jupyter-lab

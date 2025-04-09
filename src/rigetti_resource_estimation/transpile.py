@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -26,11 +26,14 @@ unsupported gates with equivalents for downstream compilers while complying with
 """
 
 import re
+from dataclasses import dataclass
 import logging
-from typing import NamedTuple
+from typing import Optional, Dict, List, Any
 
 from sympy.parsing.sympy_parser import parse_expr
 from numpy import pi
+import cirq
+import rigetti_resource_estimation.translators as translators
 
 logger = logging.getLogger(__name__)
 
@@ -43,25 +46,27 @@ zs_sdg_angles = 1.5 * pi
 z_angles = pi
 TRIVIAL_ANGLES = 0
 
-TranspiledQASMCounts = NamedTuple(
-    "TranspiledQASMCounts",
-    [
-        ("transpiled_qasm", str),
-        ("init_t_count", int),
-        ("init_rz_count", int),
-        ("init_clifford_count", int),
-    ],
-)
+
+@dataclass
+class TranspiledCirqCounts:
+    """Results class to hold the data coming from the transpiler."""
+
+    transpiled_cirq: str
+    init_t_count: int
+    init_rz_count: int
+    init_clifford_count: int
+    input_qubits: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
-def rz_angle_selector(angle: str, q: str) -> TranspiledQASMCounts:
+def rz_angle_selector(angle: str, q: str) -> TranspiledCirqCounts:
     """Select, count, and print the equivalent ops to rz(`angle`) q[`q`] gate.
 
     :param angle: the rotation angle
     :param q: qubit index
 
-    :returns: A TranspiledQASMCounts object with attributes as follows.
-        `transpiled_qasm`: a string representing the equivalent gate(s).
+    :returns: A TranspiledCirqCounts object with attributes as follows.
+        `transpiled_cirq`: a string representing the equivalent gate(s).
         `init_t_count`: total number of explicit T and TDagger gates.
         `init_rot_count`: total number of nontrivial (small-angle) Rz gates.
         `init_clifford_count`: total number of explicit Clifford gates.
@@ -98,8 +103,8 @@ def rz_angle_selector(angle: str, q: str) -> TranspiledQASMCounts:
     elif angle_f != TRIVIAL_ANGLES:
         output += "        rz(" + str(angle_f) + ") q[" + q + "];\n"
         rot_count += 1
-    return TranspiledQASMCounts(
-        transpiled_qasm=output,
+    return TranspiledCirqCounts(
+        transpiled_cirq=output,
         init_t_count=t_count,
         init_rz_count=rot_count,
         init_clifford_count=clifford_count,
@@ -117,7 +122,7 @@ class Transpiler:
         self.input_circuit = circuit
         self.transpiled_circuit = ""  # initializing a shared transpiled_circuit variable for methods below.
 
-    def qasm_exact(self) -> TranspiledQASMCounts:
+    def qasm_exact(self) -> TranspiledCirqCounts:
         """Transpile input QASM circuit replacing unsupported gates with valid and exactly equivalent ops.
 
         This converts the QASM to an form appropriate for downstream FT-compilers. Additionally, counts the number of
@@ -125,17 +130,17 @@ class Transpiler:
 
         :param circuit: an OPENQASM2.0 circuit.
 
-        :returns: A TranspiledQASMCounts object with the attributes as follows.
+        :returns: A TranspiledCirqCounts object with the attributes as follows.
             `transpiled_circuit`: The transpiled QASM circuit. This is the equivalent quantum circuit with some gates
-                replaced using **exact** equivalences.
+            replaced using **exact** equivalences.
             `init_t_count`: Number of T and TDagger gates in the original circuit.
             `init_rot_count`: Number of small-angle rotation gates in the original circuit.
             `init_clifford_count`: Number of explicit Clifford gates in the original circuit.
         """
         output = self.transpiled_circuit
-        tot_rot_count = 0
-        tot_t_count = 0
-        tot_clifford_count = 0
+        total_rot_count = 0
+        total_t_count = 0
+        total_clifford_count = 0
 
         for line in self.input_circuit.splitlines():
             match = re.search(r"\((.+)\)", line)
@@ -165,91 +170,91 @@ class Transpiler:
 
             if re.search(r"^ *(t|tdg) ", line) is not None:  # T and T^dagger gates
                 output += line + "\n"
-                tot_t_count += 1
+                total_t_count += 1
             elif re.search(r"^ *sdg ", line) is not None:  # T and T^dagger gates
                 output += "        z q[" + q + "];\n"
                 output += "        s q[" + q + "];\n"
-                tot_clifford_count += 1
+                total_clifford_count += 1
             elif re.search(r"^ *(measure|barrier|post|reset|//)", line) is not None:
                 continue  # measure,barrier,post ops and comments
             elif re.search(r"^ *(p|u1|rz)\(", line) is not None:  # Phase, u1, rz gates
-                transpiled_qasm_counts = rz_angle_selector(angle, q)
-                output += transpiled_qasm_counts.transpiled_qasm
-                tot_t_count += transpiled_qasm_counts.init_t_count
-                tot_rot_count += transpiled_qasm_counts.init_rz_count
-                tot_clifford_count += transpiled_qasm_counts.init_clifford_count
+                transpiled_cirq_counts = rz_angle_selector(angle, q)
+                output += transpiled_cirq_counts.transpiled_cirq
+                total_t_count += transpiled_cirq_counts.init_t_count
+                total_rot_count += transpiled_cirq_counts.init_rz_count
+                total_clifford_count += transpiled_cirq_counts.init_clifford_count
             elif re.search(r"^ *(cu1|cp)\(", line) is not None:  # CP gate
-                transpiled_qasm_counts1 = rz_angle_selector(angle + "/2", qq0)
+                transpiled_cirq_counts1 = rz_angle_selector(angle + "/2", qq0)
                 out1 = "        cx q[" + qq0 + "],q[" + qq1 + "];\n"
-                transpiled_qasm_counts2 = rz_angle_selector("-" + angle + "/2", qq1)
+                transpiled_cirq_counts2 = rz_angle_selector("-" + angle + "/2", qq1)
                 out2 = "        cx q[" + qq0 + "],q[" + qq1 + "];\n"
-                transpiled_qasm_counts3 = rz_angle_selector(angle + "/2", qq1)
+                transpiled_cirq_counts3 = rz_angle_selector(angle + "/2", qq1)
                 output += (
-                    transpiled_qasm_counts1.transpiled_qasm
+                    transpiled_cirq_counts1.transpiled_cirq
                     + out1
-                    + transpiled_qasm_counts2.transpiled_qasm
+                    + transpiled_cirq_counts2.transpiled_cirq
                     + out2
-                    + transpiled_qasm_counts3.transpiled_qasm
+                    + transpiled_cirq_counts3.transpiled_cirq
                 )
-                tot_t_count += (
-                    transpiled_qasm_counts1.init_t_count
-                    + transpiled_qasm_counts2.init_t_count
-                    + transpiled_qasm_counts3.init_t_count
+                total_t_count += (
+                    transpiled_cirq_counts1.init_t_count
+                    + transpiled_cirq_counts2.init_t_count
+                    + transpiled_cirq_counts3.init_t_count
                 )
-                tot_rot_count += (
-                    transpiled_qasm_counts1.init_rz_count
-                    + transpiled_qasm_counts2.init_rz_count
-                    + transpiled_qasm_counts3.init_rz_count
+                total_rot_count += (
+                    transpiled_cirq_counts1.init_rz_count
+                    + transpiled_cirq_counts2.init_rz_count
+                    + transpiled_cirq_counts3.init_rz_count
                 )
-                tot_clifford_count += (
+                total_clifford_count += (
                     1
-                    if transpiled_qasm_counts1.init_t_count
-                    + transpiled_qasm_counts2.init_t_count
-                    + transpiled_qasm_counts3.init_t_count
-                    + transpiled_qasm_counts1.init_rz_count
-                    + transpiled_qasm_counts2.init_rz_count
-                    + transpiled_qasm_counts3.init_rz_count
+                    if transpiled_cirq_counts1.init_t_count
+                    + transpiled_cirq_counts2.init_t_count
+                    + transpiled_cirq_counts3.init_t_count
+                    + transpiled_cirq_counts1.init_rz_count
+                    + transpiled_cirq_counts2.init_rz_count
+                    + transpiled_cirq_counts3.init_rz_count
                     == 0
                     else 0
                 )
             elif re.search(r"^ *(u|u3|U)\(", line) is not None:  # u, u3, U gates
-                transpiled_qasm_counts1 = rz_angle_selector(aaa2, q)
+                transpiled_cirq_counts1 = rz_angle_selector(aaa2, q)
                 out1 = "        h q[" + q + "];\n"
                 out1 += "        s q[" + q + "];\n"
                 out1 += "        h q[" + q + "];\n"
-                transpiled_qasm_counts2 = rz_angle_selector(aaa0, q)
+                transpiled_cirq_counts2 = rz_angle_selector(aaa0, q)
                 out2 = "        z q[" + q + "];\n"
                 out2 += "        h q[" + q + "];\n"
                 out2 += "        s q[" + q + "];\n"
                 out2 += "        h q[" + q + "];\n"
-                transpiled_qasm_counts3 = rz_angle_selector(aaa1, q)
+                transpiled_cirq_counts3 = rz_angle_selector(aaa1, q)
                 out3 = "        z q[" + q + "];\n"
                 output += (
-                    transpiled_qasm_counts1.transpiled_qasm
+                    transpiled_cirq_counts1.transpiled_cirq
                     + out1
-                    + transpiled_qasm_counts2.transpiled_qasm
+                    + transpiled_cirq_counts2.transpiled_cirq
                     + out2
-                    + transpiled_qasm_counts3.transpiled_qasm
+                    + transpiled_cirq_counts3.transpiled_cirq
                     + out3
                 )
-                tot_t_count += (
-                    transpiled_qasm_counts1.init_t_count
-                    + transpiled_qasm_counts2.init_t_count
-                    + transpiled_qasm_counts3.init_t_count
+                total_t_count += (
+                    transpiled_cirq_counts1.init_t_count
+                    + transpiled_cirq_counts2.init_t_count
+                    + transpiled_cirq_counts3.init_t_count
                 )
-                tot_rot_count += (
-                    transpiled_qasm_counts1.init_rz_count
-                    + transpiled_qasm_counts2.init_rz_count
-                    + transpiled_qasm_counts3.init_rz_count
+                total_rot_count += (
+                    transpiled_cirq_counts1.init_rz_count
+                    + transpiled_cirq_counts2.init_rz_count
+                    + transpiled_cirq_counts3.init_rz_count
                 )
-                tot_clifford_count += (
+                total_clifford_count += (
                     1
-                    if transpiled_qasm_counts1.init_t_count
-                    + transpiled_qasm_counts2.init_t_count
-                    + transpiled_qasm_counts3.init_t_count
-                    + transpiled_qasm_counts1.init_rz_count
-                    + transpiled_qasm_counts2.init_rz_count
-                    + transpiled_qasm_counts3.init_rz_count
+                    if transpiled_cirq_counts1.init_t_count
+                    + transpiled_cirq_counts2.init_t_count
+                    + transpiled_cirq_counts3.init_t_count
+                    + transpiled_cirq_counts1.init_rz_count
+                    + transpiled_cirq_counts2.init_rz_count
+                    + transpiled_cirq_counts3.init_rz_count
                     == 0
                     else 0
                 )
@@ -257,24 +262,24 @@ class Transpiler:
                 out1 = "        z q[" + q + "];\n"
                 out1 += "        s q[" + q + "];\n"
                 out1 += "        h q[" + q + "];\n"
-                transpiled_qasm_counts2 = rz_angle_selector(angle, q)
+                transpiled_cirq_counts2 = rz_angle_selector(angle, q)
                 out2 = "        h q[" + q + "];\n"
                 out2 += "        s q[" + q + "];\n"
-                output += out1 + transpiled_qasm_counts2.transpiled_qasm + out2
-                tot_t_count += transpiled_qasm_counts2.init_t_count
-                tot_rot_count += transpiled_qasm_counts2.init_rz_count
-                tot_clifford_count += (
-                    1 if transpiled_qasm_counts2.init_t_count + transpiled_qasm_counts2.init_rz_count == 0 else 0
+                output += out1 + transpiled_cirq_counts2.transpiled_cirq + out2
+                total_t_count += transpiled_cirq_counts2.init_t_count
+                total_rot_count += transpiled_cirq_counts2.init_rz_count
+                total_clifford_count += (
+                    1 if transpiled_cirq_counts2.init_t_count + transpiled_cirq_counts2.init_rz_count == 0 else 0
                 )
             elif re.search(r"^ *rx\(", line) is not None:  # rx(arbitrary-angle) gate
                 out1 = "        h q[" + q + "];\n"
-                transpiled_qasm_counts2 = rz_angle_selector(angle, q)
+                transpiled_cirq_counts2 = rz_angle_selector(angle, q)
                 out2 = "        h q[" + q + "];\n"
-                output += out1 + transpiled_qasm_counts2.transpiled_qasm + out2
-                tot_t_count += transpiled_qasm_counts2.init_t_count
-                tot_rot_count += transpiled_qasm_counts2.init_rz_count
-                tot_clifford_count += (
-                    1 if transpiled_qasm_counts2.init_t_count + transpiled_qasm_counts2.init_rz_count == 0 else 0
+                output += out1 + transpiled_cirq_counts2.transpiled_cirq + out2
+                total_t_count += transpiled_cirq_counts2.init_t_count
+                total_rot_count += transpiled_cirq_counts2.init_rz_count
+                total_clifford_count += (
+                    1 if transpiled_cirq_counts2.init_t_count + transpiled_cirq_counts2.init_rz_count == 0 else 0
                 )
             elif re.search(r"^ *ccz(_\d+)? ", line) is not None:  # ccz and ccz(_digits) gates
                 output += "        cx q[" + qqq1 + "],q[" + qqq2 + "];\n"
@@ -290,7 +295,7 @@ class Transpiler:
                 output += "        t q[" + qqq0 + "];\n"
                 output += "        tdg q[" + qqq1 + "];\n"
                 output += "        cx q[" + qqq0 + "],q[" + qqq1 + "];\n"
-                tot_t_count += 7
+                total_t_count += 7
             elif re.search(r"^ *ccx ", line) is not None:  # ccx gates
                 output += "        h q[" + qqq2 + "];\n"
                 output += "        cx q[" + qqq1 + "],q[" + qqq2 + "];\n"
@@ -307,42 +312,177 @@ class Transpiler:
                 output += "        t q[" + qqq0 + "];\n"
                 output += "        tdg q[" + qqq1 + "];\n"
                 output += "        cx q[" + qqq0 + "],q[" + qqq1 + "];\n"
-                tot_t_count += 7
+                total_t_count += 7
             elif re.search(r"^ *sx ", line) is not None:  # sx gate
                 output += "        h q[" + q + "];\n"
                 output += "        s q[" + q + "];\n"
                 output += "        h q[" + q + "];\n"
-                tot_clifford_count += 1
+                total_clifford_count += 1
             elif re.search(r"^ *sxdg ", line) is not None:  # sxdg gate
                 output += "        h q[" + q + "];\n"
                 output += "        z q[" + q + "];\n"
                 output += "        s q[" + q + "];\n"
                 output += "        h q[" + q + "];\n"
-                tot_clifford_count += 1
+                total_clifford_count += 1
+            elif re.search(r"^ *ch ", line) is not None:  # ch gate
+                output += "        s q[" + qq1 + "];\n"
+                output += "        h q[" + qq1 + "];\n"
+                output += "        t q[" + qq1 + "];\n"
+                output += "        cx q[" + qq0 + "],q[" + qq1 + "];\n"
+                output += "        tdg q[" + qq1 + "];\n"
+                output += "        h q[" + qq1 + "];\n"
+                output += "        z q[" + qq1 + "];\n"
+                output += "        s q[" + qq1 + "];\n"
+                total_t_count += 2
             else:
                 output += line + "\n"
                 if re.search(r"^ *(OPENQASM|include|qreg)", line) is None:
-                    tot_clifford_count += 1
+                    total_clifford_count += 1
 
-        return TranspiledQASMCounts(
-            transpiled_qasm=output,
-            init_t_count=tot_t_count,
-            init_rz_count=tot_rot_count,
-            init_clifford_count=tot_clifford_count,
+        return TranspiledCirqCounts(
+            transpiled_cirq=output,
+            init_t_count=total_t_count,
+            init_rz_count=total_rot_count,
+            init_clifford_count=total_clifford_count,
         )
 
 
-def precompile_circuit(circuit_qasm: str) -> TranspiledQASMCounts:
+def precompile_circuit(circuit_qasm: str) -> TranspiledCirqCounts:
     """Offer an easy-to-use function for the Transpile class to pre-compile the circuit and print additional info.
 
     :param circuit_qasm: the logical-level OpenQASM2.0 circuit to be transpiled.
-
-    :returns:
-        `circuit_qasm`: The transpiled qasm circuit. This is the equivalent quantum circuit with some gates
-            replaced using **exact** equivalences.
-        `orig_t_count`: Number of explicit T and TDagger gates in the original circuit.
-        `arbitrary_rot_count`: Number of small-angle rotation gates in the original circuit.
     """
     transpiler = Transpiler(circuit_qasm)
-    transpiled_qasm_counts = transpiler.qasm_exact()
-    return transpiled_qasm_counts
+    transpiled_cirq_counts = transpiler.qasm_exact()
+    return transpiled_cirq_counts
+
+
+class CirqTranspiler:
+    """Transpiler acting on circuits generated with Cirq."""
+
+    def __init__(self, translator_list: Optional[List[translators.CirqToCabaliser]] = None) -> None:
+        """Translators are optional for backwards compatibility with existing Jablizer transpiler."""
+        self.translators = translator_list or []
+
+        # Ensure all translators are the same type (from and to) and from is always cirq
+        if translator_list:
+            if (len(set(translator.to_framework for translator in translator_list)) == 1) and all(
+                translator.from_framework == "cirq" for translator in translator_list
+            ):
+                self._alphabet = [translator.op_id for translator in translator_list]
+            else:
+                raise ValueError(
+                    """Translators inconsistent. At least 1 has to_framework different than the others, or
+                    from_framework not cirq."""
+                )
+
+    @property
+    def labels(self):
+        """Return the set of all labels attached to translator."""
+        return set(
+            label
+            for translator in self.translators
+            for label in translator.labels  # pylint: disable=E1133 # type: ignore
+        )
+
+    @property
+    def alphabet(self) -> List[Any]:
+        """Return a list of op_ids of the translators."""
+        return self._alphabet
+
+    def reset_counts(self):
+        [translator.reset_count() for translator in self.translators]
+
+    def times_called(self, label: str) -> int:
+        """Return the number of times an translator was called with the passed label.
+
+        :param tag: Tag to query.
+        """
+        return sum((translator.times_called for translator in self.translators if label in translator.labels))
+
+    def transpile(self, circuit: cirq.Circuit, qb_map: Optional[Dict[cirq.Qid, int]] = None) -> TranspiledCirqCounts:
+        """Transpile the passed circuit into a TranspiledCirqCounts object for downstream RRE processing.
+
+        Note: for backwards compatibility, this is still called a "TranspiledCirqCounts" object. This is likely to be
+        updated away from referencing QASMs specifcially.
+
+        :param circuit: The cirq circuit to transpile.
+        :param qb_map: A dictionary containing the mapping of cirq qubits to integers.
+        """
+        self.reset_counts()
+        if self.translators:
+            return self._transpile_circuit(circuit, qb_map)
+        return precompile_circuit(circuit)  # type: ignore
+
+    def convert_op(self, op: cirq.Operation, qb_map: Dict[cirq.Qid, int]) -> translators.CabaliserOp:  # type: ignore
+        """Convert the cirq operation to its cabaliser equivalent.
+
+        :param op: The operation to convert.
+        :param qb_map: A dictionary containing the mapping of cirq qubits to integers.
+        """
+        converted = [
+            translator.convert(op, qb_map)
+            for translator in self.translators
+            if translator.can_apply_to(op)  # pylint: disable=E1133 # type: ignore
+        ]
+        if len(converted) == 1:
+            return converted[0]  # type: ignore
+        if len(converted) > 1:
+            compatible_translators = [
+                translator
+                for translator in self.translators
+                if translator.can_apply_to(op)  # pylint: disable=E1133 # type: ignore
+            ]
+            raise ValueError(
+                f"{op} was converted by more than one translator. Compatible translators are {compatible_translators}"
+            )
+        raise ValueError(f"{op} could not be converted using existing translator.")
+
+    def is_compatible(self, op: cirq.Operation) -> bool:  # type: ignore
+        """Determines if this operator is compatible with any of the transpilers translators.
+
+        :param op: Operation to check.
+        """
+        translator_can_handle = any(
+            translator.can_apply_to(op) for translator in self.translators  # pylint: disable=E1133 # type: ignore
+        )
+        return translator_can_handle or isinstance(op.gate, cirq.GlobalPhaseGate)  # type: ignore
+
+    def _transpile_circuit(self, circuit, qb_map=None):
+        if not qb_map:
+            qb_map = {qb: i for i, qb in enumerate(circuit.all_qubits())}
+        operations = circuit.all_operations()
+        converted = [self.convert_op(op, qb_map) for op in operations]
+        counts = {label: self.times_called(label) for label in self.labels}
+        input_qubits = len(qb_map)
+        metadata = {
+            str(translator.op_id): translator.meta
+            for translator in self.translators  # pylint: disable=E1133 # type: ignore
+        }
+
+        return TranspiledCirqCounts(
+            transpiled_cirq=converted,  # type: ignore
+            init_t_count=counts["t"],
+            init_rz_count=counts["rz"],
+            init_clifford_count=counts["clifford"],
+            input_qubits=input_qubits,
+            metadata=metadata,
+        )
+
+
+def transpile_example():
+    """Run a simple example of transpiling a small random circuit."""
+    import cirq.testing as ct  # pylint: disable=import-outside-toplevel
+    from rigetti_resource_estimation import decomposers
+
+    op_translators = translators.CIRQ2CABALISER_SIMPLE_TRANSLATORS + translators.CIRQ2CABALISER_OTHER_TRANSLATORS
+    transpiler = CirqTranspiler(translator_list=op_translators)
+    keep_fn = transpiler.is_compatible
+
+    rc = ct.random_circuit(qubits=5, n_moments=3, op_density=0.7)  # type: ignore
+    print(rc)
+    op_decomposers = decomposers.CIRQ_INTERCEPTING_DECOMPS + decomposers.CIRQ_FALLBACK_DECOMPS
+    circuit_decomposer = decomposers.CirqDecomposer(op_decomposers)
+    decomposed, _ = circuit_decomposer.decompose_and_qb_map(rc, keep=keep_fn)
+    transpiled = transpiler.transpile(decomposed)  # type: ignore
+    print(transpiled)

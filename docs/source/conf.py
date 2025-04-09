@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.abspath("../../src"))
 
 project = "project"  # command line override
 
-copyright = "Copyright 2022-2024 Rigetti & Co, LLC."
+copyright = "Copyright 2022-2025 Rigetti & Co, LLC."
 
 author = "Rigetti Computing Support <support@rigetti.com>"
 

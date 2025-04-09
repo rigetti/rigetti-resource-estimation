@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -34,14 +34,24 @@ include=${package//-/_}
 estimation_pipeline=./src/rigetti_resource_estimation/estimation_pipeline.py
 
 echo
-echo "Estimating resources for QASM files in examples/input with $package $version ($include)."
+echo "Estimating resources for default input algorithms with $package $version ($include)."
+echo
+echo "Run: poetry run python ${estimation_pipeline} -o ./output/test.csv"
+echo
+poetry run python ${estimation_pipeline} -o ./output/test.csv
 echo
 
-for qasm in ./examples/input/*.qasm; do
-    echo "Run: poetry run python ${estimation_pipeline} --qasm-path ${qasm} -o ./output/test.csv"
+popd > /dev/null
+
+pushd "${script_directory}/.." > /dev/null
+echo
+echo "Execute python modules in ./examples with $package $version ($include)."
+echo
+
+for circuit in ./examples/*.py; do
+    echo "Run: poetry run python $circuit"
     echo
-    mkdir -p examples/output
-    poetry run python ${estimation_pipeline} --circ-path ${qasm} -o ./output/test.csv
+    poetry run python $circuit
     echo
 done
 

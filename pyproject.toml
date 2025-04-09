@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -20,6 +20,7 @@
 
 [tool.black]
 line-length = 120
+exclude = "external/"
 
 [tool.coverage.report]
 exclude_also = [
@@ -34,12 +35,17 @@ exclude_also = [
 
 [tool.poetry]
 name = "rigetti_resource_estimation"
-version = "0.23.6"
+version = "0.26.32"
 description = "A resource estimator for future fault-tolerant superconducting quantum hardware based on graph state compilation to surface code widgets."
 license = "As per Agreement HR00112230006 for the US Government; Apache 2.0 otherwise."
 authors = ["Mark Hodson <mhodson@rigetti.com>", "Josh Mutus <jmutus@rigetti.com>", "Nariman Saadatmand <nsaadatmand@rigetti.com>", "Tyler Wilson <twilson@rigetti.com>"]
 packages = [{ include = "rigetti_resource_estimation", from = "src" }]
-include = ["CHANGELOG.md", "LICENSE", "params.yaml", { path = "examples", format = "sdist" }]
+include = [
+    { path = "CHANGELOG.md", format = ["sdist", "wheel"] },
+    { path = "LICENSE", format = ["sdist", "wheel"] },
+    { path = "params.yaml", format = ["sdist", "wheel"] },
+    { path = "examples", format = ["sdist"] },
+]
 readme = "README.md"
 
 [tool.poetry.scripts]
@@ -47,18 +53,19 @@ sweep = "rigetti_resource_estimation.analysis:sweep"
 
 [tool.poetry.dependencies]
 argh = ">=0.26.2"
-attrs = ">=21.3"
-cirq = ">=1.1"
+attrs = ">=24.0"
+cirq-core = "=1.4"
 graph-state-generation = { git = "https://github.com/sfc-aqua/gosc-graph-state-generation" }
-juliacall = ">=0.9.12"
+cabaliser = {path = "external/cabaliser", develop = true}
+juliacall = "==0.9.12"
 mbqc-scheduling = ">=0.1"
 networkx = "^2.8.3"
 pandas = "^1.5.3"
 pauli-tracker = ">=0.1"
-python = ">=3.8,!=3.9.7,<3.11"
+python = ">=3.10,<3.12"
 qiskit = ">=0.24"
-scipy = ">=1.10"
 stim = ">=1.10"
+pyliqtr = "1.3.3"
 
 
 [tool.poetry.dev-dependencies]
@@ -74,7 +81,7 @@ pytest-profiling = "^1.7"
 pyyaml = "^6.0"
 qiskit-aer = ">=0.14.0.1"
 ruff = "^0.0.280"
-sphinx = "^4.5.0"
+sphinx = "^5.0.0"
 sphinx-autodoc-typehints = "^1.17"
 sphinx-rtd-theme = "^1.0"
 
@@ -84,5 +91,5 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.ruff]
 line-length = 120
 exclude = [
-    "Jabalizer.jl/",
+    "external/"
 ]
