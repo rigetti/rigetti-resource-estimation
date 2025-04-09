@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -20,55 +20,57 @@
 
 """A collection of unit tests to VALIDATE rigetti-resource-estimation operations. Does RRE do the right things?"""
 
+import json
 import networkx as nx
 import pandas as pd
 
 from rigetti_resource_estimation import load_yaml_file
 from rigetti_resource_estimation.estimation_pipeline import estimation_pipeline
-from rigetti_resource_estimation.jabalizer_wrapper import create_nxgraph_from_jabalize
+from rigetti_resource_estimation.cabaliser_wrapper import create_nxgraph_from_adjdict
+
 
 PARAMS = load_yaml_file()
-QASM_PATH = "./tests/input/qft4.qasm"
 
 
 def test_validate_estimationpipeline_qft4(tmp_path):
     """
-    A validation test for the frontend estimation_pipeline() running a QFT4 algorithm.
+    A validation test for the frontend estimation_pipeline() running a  widgetized algorithm involving QFT4.
 
-    We are comparing relevant outputs from the three internal approaches of `T-counting`, `Graph Processing:
-    RubySlippers Compiler` (no padding), and `Graph Processing: Jabalizer Compiler`.
+    We compare relevant outputs from the two internal approaches of `T-counting` and `Cabaliser` compilation.
     """
     output_csv = tmp_path / "test.csv"
 
     # T-couning
     estimation_pipeline(
-        circ_path=QASM_PATH,
         log="DEBUG",
         output_csv=output_csv,
         est_method="t_counting",
         graph_state_opt="no_compile",
     )
 
-    # Jabalizer Compiler
+    # Cabaliser Compiler
     estimation_pipeline(
-        circ_path=QASM_PATH,
         log="DEBUG",
         output_csv=output_csv,
-        est_method="jabalizer",
+        est_method="cabaliser",
         graph_state_opt="save",
     )
 
-    df = pd.read_csv(output_csv, header=0, index_col=None, squeeze=True)  # type: ignore
+    # Checking if the generated graph W2 and the expected one are equivalent
+    json_defualt = "examples/input/qft4_random_reps_W2_all0init_cabalizeframes.json"
+    with open(json_defualt, encoding="utf8") as json_file:
+        data_default = json.load(json_file)[0]
+    json_cabaliser = "output/qft4_random_reps/qft4_random_reps_W2_all0init_cabalizeframes.json"
+    with open(json_cabaliser, encoding="utf8") as json_file:
+        data_cabaliser = json.load(json_file)[0]
+    graph_default = create_nxgraph_from_adjdict(data_default["adjacencies"])
+    graph_cabaliser = create_nxgraph_from_adjdict(data_cabaliser["adjacencies"])
+    assert nx.is_isomorphic(graph_default, graph_cabaliser)
+
+    df = pd.read_csv(output_csv, header=0, index_col=None)
     results = df.to_dict()
-
-    # Checking if the graphs are the same
-    graph_defualt = create_nxgraph_from_jabalize("./tests/input/qft4_all0init_jabalizeframes.json")
-    graph_jabalizer = create_nxgraph_from_jabalize("./output/qft4/qft4_all0init_jabalizeframes.json")
-    assert nx.is_isomorphic(graph_defualt, graph_jabalizer)
-
-    # Common results expected from T-counting and Jabalizer methods
-    assert results["rz_count"][0] == results["rz_count"][1] == 9
-    assert results["input_log_qubits"][0] == results["input_log_qubits"][1] == 4
-    # Validating results only expected from Jabalizer's approach
-    assert results["required_logical_qubits"][1] == 27
-    assert results["N"][1] == 30
+    # Checking common results expected from T-counting and Cabaliser methods
+    assert results["input_logical_qubits"][0] == results["input_logical_qubits"][1] == 4
+    # Validating results only expected from Cabaliser's approach
+    assert results["num_logical_qubits_per_busrail"][1] == 22
+    assert results["N"][1] == 216

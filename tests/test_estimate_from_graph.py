@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -20,8 +20,8 @@
 
 """Unit tests for the estimate_from_surgery module of rigettiestimator."""
 
-from rigetti_resource_estimation.estimate_from_graph import d_from_rates
-from rigetti_resource_estimation.graph_utils import JabalizerSchedGraphItems
+from rigetti_resource_estimation.estimate_from_graph import d_from_rates, d_condition
+from rigetti_resource_estimation.graph_utils import CompilerSchedGraphItems
 import rigetti_resource_estimation.hardware_components as hw
 from rigetti_resource_estimation import Configuration, load_yaml_file
 
@@ -29,7 +29,7 @@ from rigetti_resource_estimation import Configuration, load_yaml_file
 # Initialize some params and objects for the unit tests
 config = Configuration(load_yaml_file())
 widget_table = hw.build_dist_widgets(config.widget_params)
-widget = widget_table.widgets[0]
+dist_widget = widget_table.widgets[0]
 
 prep_sched = [
     [(1, (2, 3)), (17, (18, 19)), (8, (9, 10)), (25, (26, 30))],
@@ -37,29 +37,35 @@ prep_sched = [
     [(3, (10, 11)), (12, (18, 20)), (20, (23, 24)), (25, (26, 30))],
 ]
 consump_sched = [
-    [[7, 18, 19], [21, 22]],
-    [[9, 10, 11], [13, 18, 21], [20, 23, 24, 28, 26, 30]],
-    [[19, 20]],
+    [[{9: [7, 8]}, {13: [8]}, {16: [12]}], [{15: [12, 9]}, {14: [13]}, {17: [16]}]],
+    [[{0: []}, {2: []}, {3: []}, {1: []}]],
+    [[{19: [17, 28]}]],
 ]
-node_items = JabalizerSchedGraphItems(
+node_items = CompilerSchedGraphItems(
     t_count_init=1000,
     rz_count=100,
     clifford_count_init=1000,
     big_n=12,
     delta=4,
     t_length_unit=50,
-    prep_sched=prep_sched,
+    prep_sched=prep_sched,  # type: ignore
     consump_sched=consump_sched,
 )
 
 
+def test_d_condition():
+    """Test `d_from_rates` method in `estimate_from_graph` module."""
+    assert d_condition(dist_widget=dist_widget, graph_info=node_items, config=config, d=15)
+    assert not d_condition(dist_widget=dist_widget, graph_info=node_items, config=config, d=3)
+
+
 def test_d_from_rates():
-    """Test plogcell_from_palg static method in Qentiana."""
-    assert 12 == d_from_rates(
-        widget=widget,
-        p_algo=0.5,
-        graph_info=node_items,
-        p_gates=config.p_gates,
-        k=config.error_scaling_coeffs["k"],
-        p_th=config.error_scaling_coeffs["p_th"],
+    """Test `d_from_rates` method in `estimate_from_graph` module."""
+    assert (
+        d_from_rates(
+            widget=dist_widget,
+            graph_info=node_items,
+            config=config,
+        )
+        == 15
     )

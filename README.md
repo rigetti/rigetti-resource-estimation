@@ -1,7 +1,7 @@
 Copyright
 ---------
 
-Copyright 2022-2024 Rigetti & Co, LLC
+Copyright 2022-2025 Rigetti & Co, LLC
 
 This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -26,11 +26,12 @@ the License.
 
 The [Rigetti Resource Estimation](https://github.com/rigetti/rigetti-resource-estimation) (RRE) is a resource
 estimation tool for future fault-tolerant superconducting quantum hardware based on logical, physical-level inputs and
-graph state compilation to measurement-based quantum computing and surface code operations (see 
+graph state compilation to measurement-based quantum computing and surface code operations. You can find RRE's original
+manuscript [here](https://arxiv.org/abs/2406.06015) and some supportive material in 
 [PhysRevA 73 022334](https://doi.org/10.1103/PhysRevA.73.022334), 
 [Quantum Sci. Technol. 2 025003](https://doi.org/10.1088/2058-9565/aa66eb), and
-[arXiv:2209.07345](https://arxiv.org/abs/2209.07345)). The program is written in Python and supports a variety of
-estimation methods.
+[arXiv:2209.07345](https://arxiv.org/abs/2209.07345). The program is written in Python and
+supports a variety of estimation methods.
 
 ## Installation
 
@@ -47,19 +48,28 @@ tool from the source. The current official installer can be invoked for Linux us
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-#### Julia and Jabalizer graph-state-compilation library 
+#### C and Cabaliser graph-state-compilation libraries 
 
-RRE uses [Jabalizer](https://github.com/QSI-BAQS/Jabalizer.jl) as its default fault-tolerant compiler for all
-graph-state-based resource estimates. Jabalizer will be installed (through Julia's official packages only on the first
-run) and invoked upon each run of RRE when the user selects the `jabalizer` estimation method. We provide a
-[jabalizer_wrapper.jl](src/rigetti_resource_estimation/jabalizer_wrapper.jl) script that automatically registers
-dependent Julia libraries, configures, and runs Jabalizer.
+RRE uses the open-source [Cabaliser](https://github.com/Alan-Robertson/cabaliser) as its default fault-tolerant compiler
+for all graph-state-based resource estimates. Cabaliser is written in C, with some Python wrapper examples, and must be
+built on user's system. We provide Cabaliser as a submodule in the [external/](external/) directory, which is
+invoked upon with each run of RRE when the user selects the `cabaliser` estimation method. We also provide a
+[cabaliser_wrapper.py](src/rigetti_resource_estimation/cabaliser_wrapper.py) module that automatically registers
+dependent Python libraries, configures, and runs Cabaliser.
 
-You must have [Julia](https://julialang.org/) installed on your system to run Jabalizer. We recommend installing Julia
-using [Juliaup](https://github.com/JuliaLang/juliaup); for Linux installations execute the following command:
+You must have [gcc](https://gcc.gnu.org/), or compatible C compilers, installed on your system to run Cabaliser. We recommend
+installing gcc and build tools using your built-in package manager; for Debian/Ubuntu Linux installations execute the following commands:
 
 ```
-curl -fsSL https://install.julialang.org | sh -s -- -y
+sudo apt update
+sudo apt install build-essential
+```
+
+Now to build and install Cabaliser from source run:
+
+```
+git submodule update --init --recursive
+make install-cabaliser
 ```
 
 ### Source install
@@ -85,22 +95,22 @@ using the following command, which will display help on all options:
 poetry run python src/rigetti_resource_estimation/estimation_pipeline.py --help
 ```
 
-Our tool includes a default four-qubit Quantum Fourier Transform OpenQASM 2.0 example circuit that you may try and
-edit as desired. To run this example with the default Jabalizer graph-state compiler and log the results to the console, 
+Our tool includes a default four-qubit Quantum Fourier Transform cirq example circuit that you may try and
+edit as desired. To run this example with the default Cabaliser graph-state compiler and log the results to the console, 
 run the following command:
 
 ```
 poetry run python src/rigetti_resource_estimation/estimation_pipeline.py --log="INFO" 
 ```
 
-A complete example would be to estimate resources for a circuit of your choice by specifying the QASM input file,
-with the results appended to a CSV file and the intermediate adjacency list of the compiled graph state also saved for
-characteristic analysis. Try the following command as an example and tailor it to your needs:
+A complete example would be to estimate resources for a widgetized circuit of your choice (specify following the default
+example in `estimation_pipeline()`), with the results appended to a CSV file and the intermediate adjacency list of the 
+compiled graph state also saved for characteristic analysis. Try the following command as an example and tailor it to your
+needs:
 
 ```
 poetry run python src/rigetti_resource_estimation/estimation_pipeline.py --log "DEBUG" \
---circ-path examples/input/qft4.qasm --est-method "jabalizer" --output examples/test.csv \
---graph-state-opt "save"
+--est-method "cabaliser" --output examples/test.csv --graph-state-opt "save"
 ```
 
 A possible use of our tool is as a design aid, sweeping specified fields from the `params.yaml` configuration file over
@@ -108,8 +118,7 @@ ranges of values to understand how hardware design changes might impact final re
 where we inspect the impact of varying the time needed for an inter-module surface-code "tock" is:
 
 ```
-poetry run sweep ftqc.intermodule_tock_sec "2e-6, 3e-6, 4e-6, 6e-6" \
---circ-path examples/input/qft4.qasm --output-csv examples/test.csv
+poetry run sweep ftqc.intermodule_tock_sec "2e-6, 3e-6, 4e-6, 6e-6" --output-csv examples/test.csv
 ```
 
 We also have a Jupyter demo notebook with more examples, [demo.ipynb](python/notebooks/demo.ipynb), which you may find

@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -23,7 +23,9 @@ The root of the `rigetti_resource_estimation` (RRE) package, which provides fram
 all layers.
 """
 
+import logging
 import sys
+import re
 from os import path
 from typing import Union, Optional, Literal, Dict, Any
 from pathlib import Path
@@ -40,6 +42,21 @@ __version__ = version(str(__package__))
 
 
 PARAMS_YAML_FILENAME = "params.yaml"
+
+
+def check_for_qasm(filepath: Union[str, Path]) -> bool:
+    """Check if `filepath` holds a valid OPENQASM2.0 file."""
+    check = False
+    try:
+        with open(filepath, "r", encoding="utf8") as file:
+            circ_content = file.readlines()
+            qasm_pattern0 = re.search(r"OPENQASM 2.0;", circ_content[0])
+            qasm_pattern1 = re.search(r"include \"qelib1.inc\";", circ_content[1])
+        if qasm_pattern0 is not None and qasm_pattern1 is not None:
+            check = True
+    except IndexError:
+        logging.info("RRE could not find a valid OPENQASM2.0 pattern in the inputted circuit; moving on!\n")
+    return check
 
 
 def load_yaml_file(filepath: Optional[Union[str, Path]] = None) -> dict:
@@ -110,9 +127,9 @@ class Configuration:
         return self.params["phys_gate_error_rate"]
 
     @property
-    def tensordecoder_char_timescale_sec(self) -> float:
-        """Return the tensor decoder characteristic timescale set in the params dict."""
-        return self.params["tensordecoder_char_timescale_sec"]
+    def decoder_char_timescale_sec(self) -> float:
+        """Return the decoder characteristic timescale set in the params dict."""
+        return self.params["decoder_char_timescale_sec"]
 
     @property
     def error_scaling_coeffs(self) -> Dict[str, float]:

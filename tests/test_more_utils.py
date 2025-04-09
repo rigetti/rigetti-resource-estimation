@@ -1,4 +1,4 @@
-# Copyright 2022-2024 Rigetti & Co, LLC
+# Copyright 2022-2025 Rigetti & Co, LLC
 #
 # This Computer Software is developed under Agreement HR00112230006 between Rigetti & Co, LLC and
 # the Defense Advanced Research Projects Agency (DARPA). Use, duplication, or disclosure is subject
@@ -133,3 +133,47 @@ class TestUpdate:
 
         assert actual1 == should_be1
         assert actual2 == should_be2
+
+
+class TestItemAndInterfaceCounter:
+    """Methods to test the ItemAndInterfaceCounter class in more_utils.py."""
+
+    def test_item_and_interface_counter_is_consistent(self):
+        """Adding N ItemAndInterfaceCounter instances should have the same result as multiplying one of them by N."""
+        u = utils.ItemAndInterfaceCounter.from_single_item("u")
+        v = utils.ItemAndInterfaceCounter.from_single_item("v")
+        u_plus_v = 5 * u + 2 * v
+        multiply = 3 * u_plus_v
+        add = u_plus_v + u_plus_v + u_plus_v
+        assert multiply.items == add.items
+        assert multiply.interfaces == add.interfaces
+
+    def test_item_and_interface_counter_counts_correctly(self):
+        """ItemAndInterfaceCounter should aggregate items and interfaces correctly."""
+        u = utils.ItemAndInterfaceCounter.from_single_item("u")
+        v = utils.ItemAndInterfaceCounter.from_single_item("v")
+        x = utils.ItemAndInterfaceCounter.from_single_item("x")
+        y = utils.ItemAndInterfaceCounter.from_single_item("y")
+        z = utils.ItemAndInterfaceCounter.from_single_item("z")
+        u_plus_v = u + v
+        xyz_combo = 3 * x + 5 * y + 7 * z
+        result = 11 * u_plus_v + 2 * xyz_combo + 13 * u_plus_v
+
+        should_be_items = {"u": 24, "v": 24, "x": 6, "y": 10, "z": 14}
+        should_be_interfaces = {
+            ("u", "v"): 24,
+            ("v", "u"): 22,
+            ("x", "x"): 4,
+            ("y", "y"): 8,
+            ("z", "z"): 12,
+            ("x", "y"): 2,
+            ("y", "z"): 2,
+            ("z", "x"): 1,
+            ("v", "x"): 1,
+            ("z", "u"): 1,
+        }
+        actual_items = result.items
+        actual_interfaces = result.interfaces
+
+        assert actual_items == should_be_items
+        assert actual_interfaces == should_be_interfaces

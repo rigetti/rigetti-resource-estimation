@@ -18,72 +18,32 @@
 # or implied. See the License for the specific language governing permissions and limitations under
 # the License.
 
-# Python litter
-__pycache__/
-*.py[cod]
-*$py.class
+"""Unit tests for `rigetti_resource_estimation` cabaliser_wrapper module."""
+import numpy as np
+from rigetti_resource_estimation.cabaliser_wrapper import CabaliserCompiler
 
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
+def test_measurement_basis_list_is_not_all_zero():
+    """Test to ensure the CabaliserCompiler doesn't return all zeros for the measurement tags.
 
-profile_default/
-ipython_config.py
+    Issue 102. https://github.com/rigetti/rigetti-resource-estimation-dev/issues/102
+    """
+    comp = CabaliserCompiler("bug", "save")
 
-__pypackages__/
-
-.mypy_cache/
-.ruff_cache/
-.dmypy.json
-dmypy.json
-
-.venv/
-
-# PyCharm litter
-.idea/
-
-# VSCode litter
-.vscode/
-
-# C/C++/Cython litter
-*.so
-
-cython_debug/
-
-# Jupyter Notebook litter
-.ipynb_checkpoints
-
-# RRE default inputs and outputs
-output/
-*.pdf
-*.csv
-src/rigetti_resource_estimation/params.bk  # backup for params.yaml created by the sweep tool
+    # arbitrary, with some non-zero angle tags
+    transpiled_widget = [
+        (36, (0,)),
+        (128, (1, 31)),
+        (32, (0,)),
+        (128, (3, 10)),
+        (32, (0,)),
+        (32, (0,)),
+        (128, (2, 31)),
+        (32, (0,)),
+        (128, (0, 1234)),
+        (128, (0, 333)),
+    ]
+    num_qubits = 4
+    max_memory = 10
+    result = comp.compile(transpiled_widget, num_qubits, max_memory)
+    assert not np.isclose(sum(abs(np.array(result["measurement_tags"]))), 0), "All measurement bases are 0."
