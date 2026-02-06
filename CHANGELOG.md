@@ -24,6 +24,10 @@ the License.
 
 # Changelog
 
+### Version 0.26.33
+
+* Fix minor MXC dissipation state reporting bug.
+
 ### Version 0.26.32
 
 * Fix minor documentation build error.

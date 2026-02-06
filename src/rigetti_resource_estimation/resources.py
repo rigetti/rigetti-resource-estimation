@@ -1373,7 +1373,14 @@ class DefaultResourceCollection(ResourceCollection):
         resources.append(NumberCouplers())
         resources.append(DecodingConsumptionPower(consump_cores=consump_cores))
         resources.append(power_4k := PowerDissipation(thermal_loads_index=0))
-        resources.append(power_mxc := PowerDissipation(thermal_loads_index=1))
+        resources.append(
+            power_mxc := PowerDissipation(
+                thermal_loads_index=1,
+                name="Power dissipation at MXC stage",
+                short_name="power_dissip_mxc_kW",
+                description="Total power dissipation at MXC stage (kW)",
+            )
+        )
         resources.append(total_consump_ops_time := TotalConsumpOpsTime())
         resources.append(total_handover_time := TotalHandoverTime())
         resources.append(overall_t_distill_delay := OverallTDistillDelay())

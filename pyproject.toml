@@ -35,7 +35,7 @@ exclude_also = [
 
 [tool.poetry]
 name = "rigetti_resource_estimation"
-version = "0.26.32"
+version = "0.26.33"
 description = "A resource estimator for future fault-tolerant superconducting quantum hardware based on graph state compilation to surface code widgets."
 license = "As per Agreement HR00112230006 for the US Government; Apache 2.0 otherwise."
 authors = ["Mark Hodson <mhodson@rigetti.com>", "Josh Mutus <jmutus@rigetti.com>", "Nariman Saadatmand <nsaadatmand@rigetti.com>", "Tyler Wilson <twilson@rigetti.com>"]
